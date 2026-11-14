@@ -1,0 +1,15 @@
+{
+  "name": "@asc/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --conditions=asc-source src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@asc/config": "workspace:*",
+    "@asc/database": "workspace:*",
+    "@asc/shared": "workspace:*"
+  }
+}

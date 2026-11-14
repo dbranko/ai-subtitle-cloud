@@ -1,0 +1,15 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/config" },
+    { "path": "packages/database" },
+    { "path": "packages/subtitle-parser" },
+    { "path": "packages/ai-providers" },
+    { "path": "packages/translation-engine" },
+    { "path": "packages/subtitle-sources" },
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/addon" }
+  ]
+}

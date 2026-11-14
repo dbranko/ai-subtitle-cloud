@@ -1,0 +1,19 @@
+{
+  "name": "@asc/shared",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cross-cutting constants, logging and health types.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "asc-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "pino": "^10.4.0"
+  }
+}

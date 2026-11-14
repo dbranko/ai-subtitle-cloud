@@ -1,0 +1,42 @@
+{
+  "name": "ai-subtitle-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal AI subtitle translator for Stremio (single-owner, self-hosted).",
+  "type": "module",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "pnpm db:generate && tsc -b && pnpm --filter @asc/dashboard build",
+    "build:server": "pnpm db:generate && tsc -b",
+    "clean": "tsc -b --clean && pnpm --filter @asc/dashboard clean",
+    "typecheck": "pnpm db:generate && tsc -b && pnpm --filter @asc/dashboard typecheck",
+    "lint": "pnpm db:generate && eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "pnpm --filter @asc/database generate",
+    "db:migrate": "pnpm --filter @asc/database migrate:deploy",
+    "db:migrate:dev": "pnpm --filter @asc/database migrate:dev",
+    "dev": "pnpm db:generate && pnpm db:migrate && pnpm -r --parallel --filter \"./apps/*\" dev",
+    "start:api": "node apps/api/dist/main.js",
+    "start:worker": "node apps/worker/dist/main.js",
+    "start:addon": "node apps/addon/dist/main.js",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  }
+}

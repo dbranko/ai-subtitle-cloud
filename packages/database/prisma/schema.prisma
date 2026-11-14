@@ -1,0 +1,26 @@
+// AI Subtitle Cloud — database schema.
+// SQLite, single-owner installation. Every change must ship as a migration
+// (`pnpm db:migrate:dev --name <change>`); never edit applied migrations.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// Liveness record written periodically by each long-running process.
+/// Lets the API report whether the background worker is alive, and is the
+/// basis for stale-worker detection in the Phase 3 job engine.
+model ServiceHeartbeat {
+  service    String   @id
+  instanceId String
+  pid        Int
+  version    String
+  startedAt  DateTime
+  lastSeenAt DateTime
+
+  @@map("service_heartbeats")
+}

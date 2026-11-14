@@ -1,0 +1,117 @@
+# AI Subtitle Cloud — private single-owner deployment.
+#
+#   docker compose up -d --build     start everything
+#   docker compose logs -f           follow logs
+#   docker compose down              stop (data is kept)
+#
+# All ports are published on 127.0.0.1 only. Inside the containers the services
+# must listen on 0.0.0.0 to be reachable through Docker's port mapping, so the
+# localhost-only restriction is enforced here, by the "127.0.0.1:" prefix.
+# To reach the app from another machine, set AUTH_TOKEN in .env and put an HTTPS
+# reverse proxy in front (see docs/SECURITY.md) — do not just remove the prefix.
+
+x-app: &app
+  image: ai-subtitle-cloud:local
+  build: .
+  restart: unless-stopped
+  # Runs as an unprivileged user. On Linux, if your user id is not 1000, set
+  # ASC_UID / ASC_GID in .env (see `id -u` / `id -g`) so ./data stays writable.
+  user: '${ASC_UID:-1000}:${ASC_GID:-1000}'
+  env_file:
+    - path: .env
+      required: false
+  environment: &app-env
+    NODE_ENV: production
+    DATA_DIR: /data
+    DATABASE_URL: file:/data/db/asc.sqlite
+    API_HOST: 0.0.0.0
+    ADDON_HOST: 0.0.0.0
+    WORKER_HEALTH_HOST: 0.0.0.0
+    ALLOW_UNAUTHENTICATED_NON_LOOPBACK: 'true'
+  volumes:
+    # Bind mount by default so subtitles, cache and the database are plain files
+    # that are easy to back up. Set ASC_DATA_MOUNT=asc-data to use the named
+    # volume instead (recommended on Docker Desktop for Windows/macOS when the
+    # project lives on the host filesystem — see docs/ARCHITECTURE.md).
+    - ${ASC_DATA_MOUNT:-./data}:/data
+
+services:
+  migrate:
+    <<: *app
+    restart: 'no'
+    # Applies pending database migrations, then exits. The other services wait for it.
+    working_dir: /app/packages/database
+    command: ['node', 'node_modules/prisma/build/index.js', 'migrate', 'deploy']
+
+  api:
+    <<: *app
+    command: ['node', 'apps/api/dist/main.js']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:${API_PORT:-7001}:7001'
+    environment:
+      <<: *app-env
+      API_PORT: '7001'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:7001/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *app
+    command: ['node', 'apps/worker/dist/main.js']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+      WORKER_HEALTH_PORT: '7002'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:7002/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  addon:
+    <<: *app
+    command: ['node', 'apps/addon/dist/main.js']
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:${ADDON_PORT:-7000}:7000'
+    environment:
+      <<: *app-env
+      ADDON_PORT: '7000'
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:7000/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  asc-data:
