@@ -1,7 +1,6 @@
-/**
- * @asc/subtitle-parser — SRT parsing, serialization and validation.
- *
- * Placeholder created in Phase 0. Implementation is scheduled for Phase 1
- * (see docs/DEVELOPMENT_ROADMAP.md). Intentionally exports nothing yet.
- */
-export {};
+export * from './types.js';
+export * from './time.js';
+export * from './parse.js';
+export * from './serialize.js';
+export * from './validate.js';
+export * from './decode.js';

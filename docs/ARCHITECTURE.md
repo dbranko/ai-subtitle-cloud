@@ -47,18 +47,20 @@ makes jobs independent of any HTTP request, browser tab or single process.
 
 ## Packages
 
-| Package                   | Purpose                                                                   | Phase         |
-| ------------------------- | ------------------------------------------------------------------------- | ------------- |
-| `@asc/shared`             | App version, health report builders, logger options with secret redaction | 0 **[built]** |
-| `@asc/config`             | Env loading and validation, storage paths, non-loopback bind guard        | 0 **[built]** |
-| `@asc/database`           | Prisma schema and migrations, SQLite client, heartbeat helpers, test DB   | 0 **[built]** |
-| `@asc/subtitle-parser`    | SRT parse / serialize / validate                                          | 1             |
-| `@asc/translation-engine` | Segmentation, context overlap, prompts, validation, retry                 | 1             |
-| `@asc/ai-providers`       | Claude / OpenAI / Gemini behind one interface, fallback, usage, pricing   | 2             |
-| `@asc/subtitle-sources`   | Local upload and OpenSubtitles adapters, matching                         | 4             |
+| Package                   | Purpose                                                                                       | Phase         |
+| ------------------------- | --------------------------------------------------------------------------------------------- | ------------- |
+| `@asc/shared`             | App version, health report builders, logger options with secret redaction                     | 0 **[built]** |
+| `@asc/config`             | Env loading and validation, storage paths, non-loopback bind guard                            | 0 **[built]** |
+| `@asc/database`           | Prisma schema and migrations, SQLite client, heartbeat helpers, test DB                       | 0 **[built]** |
+| `@asc/subtitle-parser`    | SRT decode / parse / serialize / validate                                                     | 1 **[built]** |
+| `@asc/translation-engine` | Languages, segmentation, prompt, response parsing, validation, orchestration, mock translator | 1 **[built]** |
+| `@asc/ai-providers`       | Claude / OpenAI / Gemini behind one interface, fallback, usage, pricing                       | 2             |
+| `@asc/subtitle-sources`   | Local upload and OpenSubtitles adapters, matching                                             | 4             |
 
-Dependency direction: `apps → packages`; `translation-engine → subtitle-parser, ai-providers`
-(by interface). Nothing in `packages/` knows about Stremio or HTTP.
+Dependency direction: `apps → packages`; `translation-engine → subtitle-parser`;
+`ai-providers → translation-engine` (providers implement the engine's `LlmClient` interface).
+Nothing in `packages/` knows about Stremio or HTTP. The engine is described in
+[TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
 
 ## Persistence
 

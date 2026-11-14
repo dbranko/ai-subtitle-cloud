@@ -13,5 +13,7 @@
       "default": "./dist/index.js"
     }
   },
-  "dependencies": {}
+  "dependencies": {
+    "@asc/subtitle-parser": "workspace:*"
+  }
 }

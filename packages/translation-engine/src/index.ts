@@ -1,7 +1,13 @@
-/**
- * @asc/translation-engine — Stremio-independent subtitle translation engine.
- *
- * Placeholder created in Phase 0. Implementation is scheduled for Phase 1
- * (see docs/DEVELOPMENT_ROADMAP.md). Intentionally exports nothing yet.
- */
-export {};
+export * from './version.js';
+export * from './languages.js';
+export * from './script.js';
+export * from './profiles.js';
+export * from './markup.js';
+export * from './segmentation.js';
+export * from './translator.js';
+export * from './prompt.js';
+export * from './response.js';
+export * from './validation.js';
+export * from './errors.js';
+export * from './engine.js';
+export * from './mock.js';

@@ -6,9 +6,11 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phase 0 (project foundation) complete.** The monorepo, database, configuration,
-> health checks, Docker setup and documentation exist. Translation features arrive phase by
-> phase — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+> **Status: Phases 0–1 complete.** The foundation and the SRT translation engine exist: SRT
+> parsing/serialization/validation, languages and scripts, segmentation with context,
+> prompt and response handling, and a validated end-to-end translation through a mock
+> translator. Real AI providers arrive in Phase 2 — see
+> [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
 
@@ -84,10 +86,11 @@ packages/
   shared/              Version, health report types, logger with secret redaction
   config/              Environment loading/validation, storage paths, bind guard
   database/            Prisma schema, migrations, SQLite client
-  subtitle-parser/     (Phase 1) SRT parse / serialize / validate
-  translation-engine/  (Phase 1) Segmentation and translation orchestration
+  subtitle-parser/     SRT decode / parse / serialize / validate
+  translation-engine/  Languages, segmentation, prompt, validation, translation orchestration
   ai-providers/        (Phase 2) Claude, OpenAI, Gemini behind one interface
   subtitle-sources/    (Phase 4) Local uploads, OpenSubtitles
+fixtures/      Representative subtitle files used by tests
 data/          Runtime data: db/, subtitles/, cache/, logs/, jobs/ (git-ignored)
 docs/          Product spec, architecture, roadmap, progress system, security, API, changelog
 ```
@@ -96,6 +99,7 @@ docs/          Product spec, architecture, roadmap, progress system, security, A
 
 - [Product spec](docs/PRODUCT_SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Translation engine](docs/TRANSLATION_ENGINE.md)
 - [Development roadmap](docs/DEVELOPMENT_ROADMAP.md)
 - [Progress system](docs/PROGRESS_SYSTEM.md) — the core async job and progress design
 - [Security](docs/SECURITY.md)

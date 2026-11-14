@@ -146,7 +146,11 @@ importers:
 
   packages/subtitle-sources: {}
 
-  packages/translation-engine: {}
+  packages/translation-engine:
+    dependencies:
+      '@asc/subtitle-parser':
+        specifier: workspace:*
+        version: link:../subtitle-parser
 
 packages:
 

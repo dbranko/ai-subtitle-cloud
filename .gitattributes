@@ -1,4 +1,5 @@
 * text=auto eol=lf
-*.srt text eol=lf
+# Subtitle fixtures must keep their exact bytes (BOM, CRLF, legacy encodings).
+*.srt -text
 *.png binary
 *.ico binary

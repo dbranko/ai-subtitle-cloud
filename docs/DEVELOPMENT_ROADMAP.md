@@ -7,8 +7,8 @@ updated, no known critical error remains and a summary has been reported.
 
 | Phase | Name                                                                   | Status                       |
 | ----- | ---------------------------------------------------------------------- | ---------------------------- |
-| 0     | Project foundation                                                     | **Done — awaiting approval** |
-| 1     | SRT engine                                                             | Not started                  |
+| 0     | Project foundation                                                     | Done (approved)              |
+| 1     | SRT engine                                                             | **Done — awaiting approval** |
 | 2     | AI providers                                                           | Not started                  |
 | 3     | Persistent async job engine and progress system (**highest priority**) | Not started                  |
 | 4     | Subtitle sources and cache                                             | Not started                  |
@@ -29,13 +29,21 @@ updated, no known critical error remains and a summary has been reported.
 - [x] Documentation set.
 - [x] Health checks for api, worker and add-on; dashboard status page.
 
-## Phase 1 — SRT engine
+## Phase 1 — SRT engine ✅
 
-SRT parser and serializer, validation, segmentation with context overlap, contextual
-translation interface, language/script configuration (Serbian Latin and Cyrillic separate;
-no Bosnian/Montenegrin), representative fixtures, unit tests.
-**Deliverable:** tested engine that translates SRT through a mock provider and preserves all
-structural information.
+- [x] SRT parser (tolerant of real-world irregularities, reports them as warnings).
+- [x] SRT serializer (byte-exact round trip for clean files; restores BOM and line endings).
+- [x] Structural validation of source and translated subtitles.
+- [x] Segmentation: 30–60 entries, scene-aware cuts, character budget, provider-limit adaptation.
+- [x] Contextual translation interface (`SegmentTranslator`, `LlmClient`), prompt builder,
+      response parser.
+- [x] Language and script configuration (Serbian Latin and Cyrillic separate; Bosnian and
+      Montenegrin source-only).
+- [x] Translation profiles: natural, literal, cinematic, concise, custom.
+- [x] Fixtures in `fixtures/subtitles/` and unit tests (182 new tests).
+
+**Deliverable met:** the engine translates SRT through a mock translator and preserves all
+structural information. Details: [TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
 
 ## Phase 2 — AI providers
 
