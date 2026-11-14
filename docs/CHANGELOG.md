@@ -47,9 +47,13 @@ Newest first. Each phase records what was added and the decisions made, with rea
 
 ### Known limitations / open items
 
-- **No request has been made to a real provider yet.** No API key was available in the
-  development environment. Everything is verified against the real SDKs with simulated
-  HTTP responses; `pnpm test:live` exists to close this gap and must be run with real keys.
+- **No successful translation by a real provider yet.** A live run reached the real OpenAI
+  API with the owner's key (authentication, endpoint, request format and model id
+  `gpt-6.1-sol` were accepted), but the account had no credits, so no translation came back.
+  That run found and fixed one bug: OpenAI's "no credits remaining" response (HTTP 429, type
+  `insufficient_quota`, code `credit_balance_exhausted`) was classified as a retryable rate
+  limit; it is now a `billing` error that is not retried. Anthropic and Gemini have not been
+  called. `pnpm test:live` must be run with funded keys to close this gap.
 - OpenAI and Gemini model ids were taken from the SDKs' type definitions; their prices from
   third-party trackers. Neither is verified against official documentation.
 - Gemini's `thinkingLevel` mapping and OpenAI's acceptance of `reasoning.effort` values on

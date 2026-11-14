@@ -231,6 +231,20 @@ describe('OpenAI provider', () => {
     expect(http.calls).toHaveLength(1);
   });
 
+  it('treats the real "no credits remaining" response as a billing problem, not a rate limit', async () => {
+    // Exact shape returned by the live API for an account without credit.
+    const { provider } = make(() =>
+      openAiError(429, 'credit_balance_exhausted', {}, 'insufficient_quota'),
+    );
+    const error = await failure(provider.complete(request()));
+    expect(error).toMatchObject({
+      kind: 'billing',
+      status: 429,
+      transient: false,
+      persistent: true,
+    });
+  });
+
   it('reads retry-after from a rate-limit response', async () => {
     const { provider } = make(() =>
       openAiError(429, 'rate_limit_exceeded', { 'retry-after': '2' }),

@@ -6,6 +6,16 @@ import type { AiProvider, ProviderOptions, ProviderRequest } from './types.js';
 
 const ID = 'openai' as const;
 
+/**
+ * Error type/code values OpenAI sends (with HTTP 429) when the account is out of
+ * credit. Observed live: type `insufficient_quota`, code `credit_balance_exhausted`.
+ */
+const BILLING_CODES: ReadonlySet<string> = new Set([
+  'insufficient_quota',
+  'credit_balance_exhausted',
+  'billing_hard_limit_reached',
+]);
+
 export function createOpenAiProvider(options: ProviderOptions): AiProvider {
   const client = new OpenAI({
     apiKey: options.apiKey,
@@ -111,7 +121,7 @@ function toProviderError(err: unknown): ProviderError {
   }
   if (err instanceof OpenAI.RateLimitError) {
     // OpenAI uses 429 both for rate limits and for an exhausted quota; the latter never recovers by waiting.
-    if (err.code === 'insufficient_quota') {
+    if (BILLING_CODES.has(err.type ?? '') || BILLING_CODES.has(err.code ?? '')) {
       return new ProviderError(ID, 'billing', message, { status: 429, cause: err });
     }
     const retryAfterMs = parseRetryAfter(err.headers?.get('retry-after'));

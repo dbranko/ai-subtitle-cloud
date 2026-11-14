@@ -169,10 +169,11 @@ export function openAiError(
   status: number,
   code: string,
   headers: Record<string, string> = {},
+  type: string = code,
 ): Response {
   return jsonResponse(
     status,
-    { error: { message: `simulated ${code}`, type: code, code } },
+    { error: { message: `simulated ${code}`, type, param: null, code } },
     headers,
   );
 }
