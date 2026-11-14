@@ -16,6 +16,11 @@ const optionalString = z
   .optional()
   .transform((v) => (v === undefined || v.trim() === '' ? undefined : v.trim()));
 
+export const AI_PROVIDER_IDS = ['anthropic', 'openai', 'gemini'] as const;
+export type AiProviderId = (typeof AI_PROVIDER_IDS)[number];
+export const AI_EFFORT_LEVELS = ['low', 'medium', 'high'] as const;
+export type AiEffort = (typeof AI_EFFORT_LEVELS)[number];
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
@@ -36,6 +41,33 @@ const envSchema = z.object({
   WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).default(5000),
 
   AUTH_TOKEN: optionalString,
+
+  ANTHROPIC_API_KEY: optionalString,
+  OPENAI_API_KEY: optionalString,
+  GEMINI_API_KEY: optionalString,
+  AI_PROVIDER: z.enum(AI_PROVIDER_IDS).default('anthropic'),
+  AI_MODEL: optionalString,
+  AI_FALLBACK_PROVIDER: z
+    .enum(AI_PROVIDER_IDS)
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+  AI_FALLBACK_MODEL: optionalString,
+  AI_EFFORT: z.enum(AI_EFFORT_LEVELS).default('medium'),
+  AI_TEMPERATURE: optionalString.transform((v, ctx) => {
+    if (v === undefined) return undefined;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0 || n > 2) {
+      ctx.addIssue({ code: 'custom', message: 'must be a number between 0 and 2' });
+      return z.NEVER;
+    }
+    return n;
+  }),
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(1024).max(128_000).default(32_000),
+  AI_MAX_SEGMENT_ENTRIES: z.coerce.number().int().min(5).max(200).default(60),
+  AI_TRANSLATION_PROFILE: z.string().default('natural'),
+  AI_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(5000).default(180_000),
+  AI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
+  PRICING_FILE: optionalString,
   ALLOW_UNAUTHENTICATED_NON_LOOPBACK: bool(false),
 });
 
@@ -57,6 +89,25 @@ export interface AppConfig {
   api: { host: string; port: number };
   addon: { host: string; port: number };
   worker: { healthHost: string; healthPort: number; heartbeatIntervalMs: number };
+  ai: {
+    /** API keys by provider. Server-side only: never log, never send to the browser or Stremio. */
+    apiKeys: Partial<Record<AiProviderId, string>>;
+    provider: AiProviderId;
+    /** Undefined = the provider's default model. */
+    model: string | undefined;
+    fallbackProvider: AiProviderId | undefined;
+    fallbackModel: string | undefined;
+    effort: AiEffort;
+    /** Only sent to providers that accept it; undefined = provider default. */
+    temperature: number | undefined;
+    maxOutputTokens: number;
+    maxSegmentEntries: number;
+    translationProfile: string;
+    requestTimeoutMs: number;
+    maxRetries: number;
+    /** JSON file with per-model prices used for cost estimates. */
+    pricingFile: string;
+  };
   security: {
     /** Shared secret required when any service is bound beyond localhost. Never log this. */
     authToken: string | undefined;
@@ -118,6 +169,25 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       healthPort: e.WORKER_HEALTH_PORT,
       heartbeatIntervalMs: e.WORKER_HEARTBEAT_INTERVAL_MS,
     },
+    ai: {
+      apiKeys: definedOnly({
+        anthropic: e.ANTHROPIC_API_KEY,
+        openai: e.OPENAI_API_KEY,
+        gemini: e.GEMINI_API_KEY,
+      }),
+      provider: e.AI_PROVIDER,
+      model: e.AI_MODEL,
+      fallbackProvider: e.AI_FALLBACK_PROVIDER,
+      fallbackModel: e.AI_FALLBACK_MODEL,
+      effort: e.AI_EFFORT,
+      temperature: e.AI_TEMPERATURE,
+      maxOutputTokens: e.AI_MAX_OUTPUT_TOKENS,
+      maxSegmentEntries: e.AI_MAX_SEGMENT_ENTRIES,
+      translationProfile: e.AI_TRANSLATION_PROFILE,
+      requestTimeoutMs: e.AI_REQUEST_TIMEOUT_MS,
+      maxRetries: e.AI_MAX_RETRIES,
+      pricingFile: abs(e.PRICING_FILE ?? resolve(rootDir, 'config', 'pricing.json')),
+    },
     security: {
       authToken: e.AUTH_TOKEN,
       allowUnauthenticatedNonLoopback: e.ALLOW_UNAUTHENTICATED_NON_LOOPBACK,
@@ -174,6 +244,13 @@ export function describeConfig(config: AppConfig): Record<string, unknown> {
     api: config.api,
     addon: config.addon,
     worker: config.worker,
+    ai: {
+      ...config.ai,
+      // Keys are reduced to "configured: yes/no".
+      apiKeys: Object.fromEntries(
+        AI_PROVIDER_IDS.map((id) => [id, config.ai.apiKeys[id] !== undefined]),
+      ),
+    },
     security: {
       authTokenConfigured: config.security.authToken !== undefined,
       allowUnauthenticatedNonLoopback: config.security.allowUnauthenticatedNonLoopback,

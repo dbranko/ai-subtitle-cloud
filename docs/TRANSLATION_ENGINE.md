@@ -177,7 +177,7 @@ through unchanged; retrying and fallback for those belong to the provider layer 
 {
   srt, entries,
   metadata: { engineVersion, promptVersion, sourceLanguage, targetLanguage, targetScript, profile, models },
-  stats: { entries, segments, attempts, retries, transliteratedEntries, usage, sourceCharacters, translatedCharacters, translationMs },
+  stats: { entries, segments, attempts, retries, transliteratedEntries, usage, costUsd, sourceCharacters, translatedCharacters, translationMs },
   validation: { valid: true, warnings }
 }
 ```

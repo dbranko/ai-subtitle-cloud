@@ -8,8 +8,8 @@ updated, no known critical error remains and a summary has been reported.
 | Phase | Name                                                                   | Status                       |
 | ----- | ---------------------------------------------------------------------- | ---------------------------- |
 | 0     | Project foundation                                                     | Done (approved)              |
-| 1     | SRT engine                                                             | **Done — awaiting approval** |
-| 2     | AI providers                                                           | Not started                  |
+| 1     | SRT engine                                                             | Done (approved)              |
+| 2     | AI providers                                                           | **Done — awaiting approval** |
 | 3     | Persistent async job engine and progress system (**highest priority**) | Not started                  |
 | 4     | Subtitle sources and cache                                             | Not started                  |
 | 5     | Stremio add-on                                                         | Not started                  |
@@ -45,12 +45,20 @@ updated, no known critical error remains and a summary has been reported.
 **Deliverable met:** the engine translates SRT through a mock translator and preserves all
 structural information. Details: [TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
 
-## Phase 2 — AI providers
+## Phase 2 — AI providers ✅
 
-Claude, OpenAI, Gemini; provider manager, selection, fallback, token usage, error handling,
-configurable pricing. Manually triggered real-API integration test, separate from the
-ordinary suite.
-**Deliverable:** translation engine working with real providers.
+- [x] Anthropic Claude, OpenAI and Google Gemini providers on the official SDKs.
+- [x] Provider manager: selection, per-request override, timeout, retry with backoff,
+      fallback, provider disabling on configuration errors.
+- [x] Token usage tracking and cost estimates from a configurable price table.
+- [x] Unified error classification.
+- [x] Settings through the environment (`AI_*`), safe provider overview for the dashboard.
+- [x] `pnpm translate` command-line translator.
+- [x] Manually triggered live test (`pnpm test:live`), separate from the ordinary suite.
+- [x] 95 new tests driving the real SDKs through a fake HTTP transport.
+- [ ] Live run against the real APIs — see the changelog for what was and was not verified.
+
+Details: [AI_PROVIDERS.md](AI_PROVIDERS.md).
 
 ## Phase 3 — Persistent async job engine and progress system
 

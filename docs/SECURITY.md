@@ -32,9 +32,14 @@ phase that delivers it.
   `apiKey`, `token`, `authToken`, `password`, `secret` field. Configuration is logged through
   `describeConfig()`, which reduces secrets to booleans. Covered by tests.
 - **[built]** The dashboard bundle imports no server package and receives no secret.
-- **[planned — Phase 2]** AI provider keys are read server-side only (environment, or
-  settings stored outside the browser), never returned by any API response (only
-  "configured: yes/no" and a masked suffix), never sent to Stremio.
+- **[built]** AI provider keys are read server-side from the environment only. They are sent
+  to the provider as a request header and nowhere else: `describeConfig()` and
+  `describeProviders()` expose only "configured: yes/no", error messages are shortened and
+  key-free, and provider endpoints are fixed in code so an inherited `*_BASE_URL` variable
+  cannot redirect a key. Covered by tests.
+- **[built]** OpenAI requests use `store: false`, so subtitles are not retained there.
+- **[planned — Phase 6]** Editing keys from the dashboard: write-only fields, stored outside
+  the browser, never returned by any API response.
 - **[planned — Phase 8]** CI/repository check that no secret is committed.
 
 ## Input handling [planned — with the feature that accepts the input]

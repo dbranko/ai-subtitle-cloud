@@ -1,0 +1,24 @@
+{
+  "updated": "2026-11-14",
+  "currency": "USD",
+  "note": "Prices per 1 million tokens, used only for cost ESTIMATES shown in the dashboard. Edit freely; models missing here simply show no cost. Anthropic prices are from Anthropic's published model table. OpenAI and Gemini prices were taken from third-party price trackers and are NOT verified against the official pricing pages - check them before relying on the estimates.",
+  "models": {
+    "anthropic": {
+      "claude-opus-5-5": { "inputPerMTok": 4, "outputPerMTok": 20 },
+      "claude-sonnet-5-5": { "inputPerMTok": 2, "outputPerMTok": 10 },
+      "claude-haiku-5-5": { "inputPerMTok": 0.1, "outputPerMTok": 0.5 },
+      "claude-fable-5-2": { "inputPerMTok": 8, "outputPerMTok": 40 },
+      "claude-opus-5": { "inputPerMTok": 5, "outputPerMTok": 25 },
+      "claude-opus-4-8": { "inputPerMTok": 5, "outputPerMTok": 25 },
+      "claude-sonnet-5": { "inputPerMTok": 2, "outputPerMTok": 10 }
+    },
+    "openai": {
+      "gpt-6.1-sol": { "inputPerMTok": 2, "outputPerMTok": 10 },
+      "gpt-6.1-terra": { "inputPerMTok": 1, "outputPerMTok": 5 },
+      "gpt-6-luna": { "inputPerMTok": 0.1, "outputPerMTok": 0.5 }
+    },
+    "gemini": {
+      "gemini-3.8-flash": { "inputPerMTok": 0.75, "outputPerMTok": 3.75 }
+    }
+  }
+}

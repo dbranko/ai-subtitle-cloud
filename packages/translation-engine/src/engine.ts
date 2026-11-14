@@ -141,6 +141,8 @@ export interface SegmentResult {
   usage: TokenUsage;
   provider?: string;
   model?: string;
+  /** Estimated cost in USD of all attempts; undefined when any attempt had no pricing. */
+  costUsd?: number;
   durationMs: number;
   /** Entries that came back in Cyrillic and were transliterated to Serbian Latin. */
   transliteratedEntries: number;
@@ -205,6 +207,7 @@ export async function translateSegment(
   const contextAfter = range(segment.end, segment.contextEnd).map(item);
 
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0 };
+  let costUsd: number | undefined = 0;
   let previousIssues: TranslationIssue[] = [];
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -234,6 +237,10 @@ export async function translateSegment(
       throwIfCancelled(options.signal);
       usage.inputTokens += response.usage?.inputTokens ?? 0;
       usage.outputTokens += response.usage?.outputTokens ?? 0;
+      costUsd =
+        costUsd === undefined || response.costUsd === undefined
+          ? undefined
+          : costUsd + response.costUsd;
 
       const sourceById = new Map(items.map((i) => [i.id, i.text]));
       let transliteratedEntries = 0;
@@ -275,6 +282,7 @@ export async function translateSegment(
         };
         if (response.provider) result.provider = response.provider;
         if (response.model) result.model = response.model;
+        if (costUsd !== undefined) result.costUsd = costUsd;
         return result;
       }
     } catch (err) {
@@ -323,6 +331,8 @@ export interface TranslationStats {
   retries: number;
   transliteratedEntries: number;
   usage: TokenUsage;
+  /** Estimated total cost in USD; null when pricing was unknown for any segment. */
+  costUsd: number | null;
   sourceCharacters: number;
   translatedCharacters: number;
   /** Sum of segment translation time (excludes time spent waiting between segments). */
@@ -416,6 +426,9 @@ export function assembleTranslation(
         inputTokens: sum((r) => r.usage.inputTokens),
         outputTokens: sum((r) => r.usage.outputTokens),
       },
+      costUsd: used.every((r) => r.costUsd !== undefined)
+        ? Math.round(sum((r) => r.costUsd ?? 0) * 1e6) / 1e6
+        : null,
       sourceCharacters: plan.entries.reduce((n, e) => n + e.text.length, 0),
       translatedCharacters: entries.reduce((n, e) => n + e.text.length, 0),
       translationMs: sum((r) => r.durationMs),

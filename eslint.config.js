@@ -24,6 +24,7 @@ export default tseslint.config(
           // Tooling config files that belong to no package tsconfig.
           allowDefaultProject: [
             'vitest.config.ts',
+            'vitest.live.config.ts',
             'vitest.global-setup.ts',
             'packages/database/prisma.config.ts',
           ],
@@ -49,7 +50,12 @@ export default tseslint.config(
   },
   {
     // Tooling config files are not part of any package program: lint them without type info.
-    files: ['vitest.config.ts', 'vitest.global-setup.ts', 'packages/database/prisma.config.ts'],
+    files: [
+      'vitest.config.ts',
+      'vitest.live.config.ts',
+      'vitest.global-setup.ts',
+      'packages/database/prisma.config.ts',
+    ],
     extends: [tseslint.configs.disableTypeChecked],
   },
   {

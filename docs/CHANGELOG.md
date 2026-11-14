@@ -2,6 +2,60 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 2 — AI providers (2026-11-14)
+
+### Added
+
+- `@asc/ai-providers`: Anthropic, OpenAI and Gemini providers on the official SDKs; provider
+  manager (timeout, retry with backoff, fallback, disabling of misconfigured providers, usage
+  and cost totals, events); unified `ProviderError`; pricing loader; settings wiring;
+  `pnpm translate` CLI; `pnpm test:live`.
+- `config/pricing.json`: editable price table.
+- `AI_*` settings and provider keys in `@asc/config` and `.env.example`.
+- Engine: optional `costUsd` on responses, segment results and statistics.
+- `docs/AI_PROVIDERS.md`.
+
+### Decisions
+
+1. **Official SDKs, not hand-written HTTP.** They track API changes; request and response
+   shapes were taken from the installed SDK type definitions.
+2. **One retry policy, in the manager.** SDK-level retries are disabled so behaviour is the
+   same for every provider and is covered by tests (required for Phase 3 test G).
+3. **Two retry layers with different jobs:** the manager retries provider failures, the
+   engine retries invalid output.
+4. **`AI_EFFORT` is the portable generation setting.** Current Claude models reject
+   `temperature`; effort exists on all three providers. `AI_TEMPERATURE` is sent only to
+   OpenAI and Gemini, and only when set.
+5. **Default models:** `claude-opus-5-5`, `gpt-6.1-sol`, `gemini-3.8-flash`. The Claude
+   default is the best-quality model; `claude-sonnet-5-5` (about half the price) and
+   `claude-haiku-5-5` (a small fraction) are one setting away.
+6. **Default effort `medium`.** A balance of quality and cost for dialogue; adjustable.
+7. **Structured JSON output is requested from every provider**, with the same schema; the
+   engine's own parser and validation still decide.
+8. **Anthropic server-side refusal fallback is enabled** on models that support it, so a
+   safety-classifier decline on one segment does not fail the job.
+9. **Provider endpoints are fixed in code.** `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL` and
+   similar environment variables are ignored, so a key can never be sent to another host by
+   an inherited variable.
+10. **Configuration failures disable a provider for the rest of the job** (bad key, no
+    credit, unknown model); one-off failures do not.
+11. **Cost is an estimate and may be unknown.** No price configured → `null`, never a guess.
+12. **Settings are environment-based for now.** The dashboard settings page (Phase 6) will
+    edit them; `ProviderSelection` already supports per-request overrides.
+13. **Streaming for Anthropic, plain requests for OpenAI and Gemini.** The 180 s request
+    timeout is below the HTTP idle limits; revisit if real runs show long generations.
+
+### Known limitations / open items
+
+- **No request has been made to a real provider yet.** No API key was available in the
+  development environment. Everything is verified against the real SDKs with simulated
+  HTTP responses; `pnpm test:live` exists to close this gap and must be run with real keys.
+- OpenAI and Gemini model ids were taken from the SDKs' type definitions; their prices from
+  third-party trackers. Neither is verified against official documentation.
+- Gemini's `thinkingLevel` mapping and OpenAI's acceptance of `reasoning.effort` values on
+  the default models are unverified until a live run.
+- Translation quality (prompt `v1`) has not been judged on real output.
+
 ## Phase 1 — SRT engine (2026-11-14)
 
 ### Added

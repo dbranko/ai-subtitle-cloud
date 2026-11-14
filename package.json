@@ -25,7 +25,9 @@
     "start:api": "node apps/api/dist/main.js",
     "start:worker": "node apps/worker/dist/main.js",
     "start:addon": "node apps/addon/dist/main.js",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "translate": "tsx --conditions=asc-source packages/ai-providers/src/cli.ts",
+    "test:live": "vitest run --config vitest.live.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

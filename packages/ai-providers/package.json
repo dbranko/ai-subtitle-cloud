@@ -13,5 +13,13 @@
       "default": "./dist/index.js"
     }
   },
-  "dependencies": {}
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@asc/config": "workspace:*",
+    "@asc/subtitle-parser": "workspace:*",
+    "@asc/translation-engine": "workspace:*",
+    "@google/genai": "^3.3.0",
+    "openai": "^7.57.0",
+    "zod": "^4.6.7"
+  }
 }

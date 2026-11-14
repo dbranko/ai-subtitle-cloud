@@ -54,13 +54,14 @@ makes jobs independent of any HTTP request, browser tab or single process.
 | `@asc/database`           | Prisma schema and migrations, SQLite client, heartbeat helpers, test DB                       | 0 **[built]** |
 | `@asc/subtitle-parser`    | SRT decode / parse / serialize / validate                                                     | 1 **[built]** |
 | `@asc/translation-engine` | Languages, segmentation, prompt, response parsing, validation, orchestration, mock translator | 1 **[built]** |
-| `@asc/ai-providers`       | Claude / OpenAI / Gemini behind one interface, fallback, usage, pricing                       | 2             |
+| `@asc/ai-providers`       | Claude / OpenAI / Gemini providers, manager (retry, fallback, cost), pricing, CLI             | 2 **[built]** |
 | `@asc/subtitle-sources`   | Local upload and OpenSubtitles adapters, matching                                             | 4             |
 
 Dependency direction: `apps → packages`; `translation-engine → subtitle-parser`;
 `ai-providers → translation-engine` (providers implement the engine's `LlmClient` interface).
 Nothing in `packages/` knows about Stremio or HTTP. The engine is described in
-[TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
+[TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md), the providers in
+[AI_PROVIDERS.md](AI_PROVIDERS.md).
 
 ## Persistence
 

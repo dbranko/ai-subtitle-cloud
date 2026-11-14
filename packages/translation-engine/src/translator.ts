@@ -57,6 +57,8 @@ export interface SegmentTranslationResponse {
   usage?: TokenUsage;
   provider?: string;
   model?: string;
+  /** Estimated cost of this call in USD, when pricing for the model is configured. */
+  costUsd?: number;
   /** The model wrapped its answer in text that had to be discarded. */
   extraneousText?: boolean;
 }
@@ -94,6 +96,8 @@ export interface LlmResponse {
   usage?: TokenUsage;
   provider?: string;
   model?: string;
+  /** Estimated cost of this call in USD, when pricing for the model is configured. */
+  costUsd?: number;
 }
 
 export interface LlmClient {
@@ -114,6 +118,7 @@ export function createLlmTranslator(client: LlmClient): SegmentTranslator {
       if (completion.usage) response.usage = completion.usage;
       if (completion.provider) response.provider = completion.provider;
       if (completion.model) response.model = completion.model;
+      if (completion.costUsd !== undefined) response.costUsd = completion.costUsd;
       return response;
     },
   };
