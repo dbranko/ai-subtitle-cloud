@@ -51,8 +51,11 @@ Terminal states: `completed`, `failed`, `cancelled`.
 - Every transition is a compare-and-set update (`WHERE id = ? AND state = ? AND lockedBy = ?`),
   so a stale or foreign writer changes nothing.
 - For an uploaded subtitle there is nothing to locate or download; those states are passed
-  through immediately (Phase 4 adds real discovery), so the state history always has the
-  same shape.
+  through immediately. For a media request they search the subtitle sources and download and
+  validate the best match (see [SOURCES_AND_CACHE.md](SOURCES_AND_CACHE.md)). The state
+  history always has the same shape.
+- A job can also return to `queued` to wait for an identical translation that another job
+  is producing; it then finishes from the cache.
 
 ## Job record
 

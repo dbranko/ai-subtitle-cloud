@@ -38,6 +38,8 @@ export interface JobView {
   cancelRequested: boolean;
   /** True when a finished translation can be downloaded. */
   hasOutput: boolean;
+  /** The job finished by reusing a cached translation (no AI request was made). */
+  cacheHit: boolean;
   createdAt: string;
   startedAt: string | null;
   updatedAt: string;
@@ -91,6 +93,7 @@ export function toJobView(job: TranslationJob): JobView {
       : null,
     cancelRequested: job.cancelRequested,
     hasOutput: job.state === 'completed' && job.outputFile !== null,
+    cacheHit: job.cacheHit,
     createdAt: job.createdAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     updatedAt: job.updatedAt.toISOString(),

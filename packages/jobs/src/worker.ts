@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   createProviderManagerFromConfig,
@@ -10,8 +11,18 @@ import { AI_PROVIDER_IDS, type AppConfig } from '@asc/config';
 import type { Database, TranslationJob } from '@asc/database';
 import type { Logger } from '@asc/shared';
 import {
+  rankCandidates,
+  resolveContentLanguage,
+  SourceError,
+  validateSourceBytes,
+  type RankedCandidate,
+  type SourceCandidate,
+  type SubtitleSource,
+} from '@asc/subtitle-sources';
+import {
   assembleTranslation,
   createMockTranslator,
+  findLanguage,
   MOCK_PROVIDER,
   prepareTranslation,
   translateSegment,
@@ -21,23 +32,40 @@ import {
   type TranslationPlan,
   type TranslationProfileId,
 } from '@asc/translation-engine';
-import { describeFailure, JobStorageError, LostLockError } from './errors.js';
+import {
+  DeferJobError,
+  describeFailure,
+  JobSourceError,
+  JobStorageError,
+  LostLockError,
+} from './errors.js';
 import { outputFileName, outputPath, readSource, writeFileAtomic } from './files.js';
-import { hashSource } from './key.js';
+import { computeTranslationKey, hashSource, isProvisionalKey } from './key.js';
+import {
+  cleanupCache,
+  createLibrarySource,
+  createSourcesFromConfig,
+  findCachedTranslation,
+  storeSource,
+} from './library.js';
 import { estimateRemainingSeconds, type SegmentTiming } from './progress.js';
 import {
+  adoptTranslationKey,
   cancelOwnedJob,
   claimNextJob,
   completeJob,
+  deferJob,
   failJob,
   loadSegments,
   pruneEvents,
+  recordJobSource,
   recoverExpiredJobs,
   releaseJob,
   renewLeases,
   saveSegment,
   transitionJob,
   updateJob,
+  type StoredMediaQuery,
 } from './store.js';
 
 /** Receives provider-level events (retries, fallback) for the job being processed. */
@@ -76,8 +104,16 @@ export interface JobWorkerOptions {
   /** Unique per process start; identifies this worker as the owner of a job's lock. */
   workerId: string;
   createTranslator: TranslatorFactory;
+  /** Remote subtitle sources. Default: those configured (OpenSubtitles when it has an API key). */
+  sources?: SubtitleSource[];
   logger?: Logger;
 }
+
+/** How many of the best candidates are tried before a media request gives up. */
+const MAX_SOURCE_CANDIDATES = 3;
+/** A downloaded file with fewer cues than this is not a real subtitle. */
+const MIN_SOURCE_ENTRIES = 3;
+const CACHE_CLEANUP_INTERVAL_MS = 60 * 60_000;
 
 type StopReason = 'cancel' | 'shutdown' | 'lost' | 'crash';
 
@@ -110,6 +146,7 @@ export class JobWorker {
   private stopping = false;
   private polling: Promise<void> | undefined;
   private lastPrune = 0;
+  private lastCleanup = 0;
 
   constructor(private readonly options: JobWorkerOptions) {}
 
@@ -200,6 +237,12 @@ export class JobWorker {
       this.lastPrune = Date.now();
       await pruneEvents(db).catch(() => undefined);
     }
+    const limited = config.cache.maxAgeDays > 0 || config.cache.maxSizeMb > 0;
+    if (limited && Date.now() - this.lastCleanup > CACHE_CLEANUP_INTERVAL_MS) {
+      this.lastCleanup = Date.now();
+      const removed = await cleanupCache(db, config).catch(() => undefined);
+      if (removed && removed.translationsRemoved > 0) logger?.info(removed, 'cache cleaned up');
+    }
   }
 
   /** Keep leases alive; stop work on jobs that were cancelled or are no longer ours. */
@@ -283,13 +326,55 @@ export class JobWorker {
       this.write(run, (job) => transitionJob(db, job, workerId, state, patch));
     const signal = run.controller.signal;
 
-    // 1. Source discovery. An uploaded source needs no search; Phase 4 adds real discovery here.
+    // 1. Source discovery. An uploaded source is already known; a media request searches for one.
     await this.checkpoint(run);
     await to('locating_source', { statusDetail: null });
+    const candidates = run.job.sourceId ? [] : await this.locateSources(run);
 
-    // 2. Download: read the stored source and make sure it is the subtitle the job was created for.
+    // 2. Download: fetch and validate the source (media requests), then read it from the library.
+    await this.checkpoint(run);
     await to('downloading_source');
+    if (!run.job.sourceId) await this.acquireSource(run, candidates);
+    if (isProvisionalKey(run.job.translationKey)) {
+      // From here on the job is identified by the subtitle's content, like an upload.
+      const key = computeTranslationKey({
+        sourceHash: run.job.sourceHash ?? '',
+        targetLanguage: run.job.targetLanguage,
+        targetScript: run.job.targetScript,
+        profile: run.job.profile,
+        customInstructions: run.job.customInstructions ?? undefined,
+      });
+      await this.write(run, (job) => adoptTranslationKey(db, job, workerId, key));
+    }
+    if (!run.job.sourceFile) {
+      throw new JobStorageError('source_missing', 'The job has no source subtitle.');
+    }
     const srt = await readSource(config, run.job.sourceFile);
+
+    // Translation cache: an identical finished translation is reused; no AI request is made.
+    if (!run.job.force) {
+      const cached = await findCachedTranslation(db, config, run.job.translationKey);
+      if (cached) {
+        await to('parsing', { statusDetail: 'Reusing an existing translation' });
+        await to('preparing_context', {
+          totalEntries: cached.entries,
+          completedEntries: cached.entries,
+        });
+        await to('translating');
+        await to('validating');
+        await to('saving');
+        await this.write(run, async (job) => {
+          const done = await completeJob(db, config, job, workerId, {
+            outputFile: cached.file,
+            usedModels: JSON.parse(cached.models) as { provider: string; model: string }[],
+            cacheHit: true,
+          });
+          return done.job;
+        });
+        this.options.logger?.info({ jobId: run.job.id }, 'job completed from cache');
+        return;
+      }
+    }
 
     // 3. Parsing.
     await to('parsing');
@@ -388,10 +473,140 @@ export class JobWorker {
         cause: err,
       });
     }
-    await this.write(run, (job) =>
-      completeJob(db, job, workerId, { outputFile, usedModels: translation.metadata.models }),
-    );
+    let replaced: string | null = null;
+    await this.write(run, async (job) => {
+      const done = await completeJob(db, config, job, workerId, {
+        outputFile,
+        usedModels: translation.metadata.models,
+        entries: translation.entries.length,
+        validation: translation.validation,
+        stats: translation.stats,
+      });
+      replaced = done.replacedFile;
+      return done.job;
+    });
+    // A forced re-translation replaced an older cached file: remove the old one.
+    if (replaced) await rm(outputPath(config, replaced), { force: true }).catch(() => undefined);
     this.options.logger?.info({ jobId: run.job.id }, 'job completed');
+  }
+
+  /** The remote sources plus the owner's own uploads, which are always searched first. */
+  private sources(): SubtitleSource[] {
+    const { db, config } = this.options;
+    return [
+      createLibrarySource(db, config),
+      ...(this.options.sources ?? createSourcesFromConfig(config)),
+    ];
+  }
+
+  /** Search every source for the job's media and rank what was found, best first. */
+  private async locateSources(run: RunningJob): Promise<RankedCandidate[]> {
+    const { db, workerId } = this.options;
+    const stored = JSON.parse(run.job.mediaQuery ?? 'null') as StoredMediaQuery | null;
+    if (!stored)
+      throw new JobSourceError(
+        'source_not_found',
+        'The job has no source subtitle and no media to search for.',
+      );
+    const signal = run.controller.signal;
+
+    let found: SourceCandidate[] = [];
+    let lastError: unknown;
+    if (stored.pinned) {
+      found = [stored.pinned];
+    } else {
+      for (const source of this.sources()) {
+        try {
+          found.push(...(await source.search(stored.query, stored.languages, { signal })));
+        } catch (err) {
+          if (signal.aborted) throw err;
+          // One source being down must not hide what the others have.
+          lastError = err;
+          this.options.logger?.warn({ err, source: source.id }, 'subtitle source search failed');
+        }
+      }
+    }
+    const ranked = stored.pinned
+      ? found.map((c) => ({ ...c, score: 0, reasons: ['chosen by you'] }))
+      : rankCandidates(stored.query, found, {
+          languages: stored.languages,
+          excludeLanguage: run.job.targetLanguage,
+        });
+    if (ranked.length === 0) {
+      if (lastError instanceof Error) throw lastError;
+      throw new JobSourceError(
+        'source_not_found',
+        `No source subtitle was found (languages: ${stored.languages.join(', ') || 'none'}).`,
+      );
+    }
+    const best = ranked[0] as RankedCandidate;
+    const label = best.release ?? best.fileName ?? best.id;
+    await this.write(run, (job) =>
+      updateJob(db, job, workerId, {
+        statusDetail: `Found ${ranked.length} subtitle(s); best: ${label}${best.reasons[0] ? ` (${best.reasons[0]})` : ''}`,
+      }),
+    );
+    return ranked;
+  }
+
+  /**
+   * Download the best candidate, validate it and put it into the library. A
+   * candidate that turns out to be unusable is skipped and the next one tried.
+   */
+  private async acquireSource(run: RunningJob, candidates: RankedCandidate[]): Promise<void> {
+    const { db, config, workerId } = this.options;
+    const stored = JSON.parse(run.job.mediaQuery ?? 'null') as StoredMediaQuery | null;
+    const sources = new Map(this.sources().map((s) => [s.id, s]));
+    const problems: string[] = [];
+    let lastError: unknown;
+
+    for (const candidate of candidates.slice(0, MAX_SOURCE_CANDIDATES)) {
+      await this.checkpoint(run);
+      const source = sources.get(candidate.source);
+      if (!source) {
+        problems.push(`${candidate.source}: source is not configured`);
+        continue;
+      }
+      try {
+        const file = await source.download(candidate, { signal: run.controller.signal });
+        const valid = validateSourceBytes(file.bytes, {
+          maxBytes: config.sources.maxBytes,
+          legacyEncoding: findLanguage(candidate.language)?.legacyEncoding,
+          minEntries: MIN_SOURCE_ENTRIES,
+        });
+        const language = resolveContentLanguage(candidate.language, valid.srt);
+        const known = findLanguage(language)?.id ?? null;
+        const row = await storeSource(db, config, {
+          srt: valid.srt,
+          entries: valid.entries,
+          provider: candidate.local ? 'upload' : candidate.source,
+          externalId: candidate.local ? undefined : candidate.id,
+          language: known ?? undefined,
+          fileName: file.fileName ?? candidate.fileName,
+          release: candidate.release,
+          mediaType: stored?.query.type,
+          imdbId: stored?.query.imdbId,
+          season: stored?.query.season,
+          episode: stored?.query.episode,
+          videoHash: candidate.hashMatch ? stored?.query.videoHash : undefined,
+        });
+        await this.write(run, (job) => recordJobSource(db, job, workerId, row, known));
+        return;
+      } catch (err) {
+        if (run.controller.signal.aborted || err instanceof LostLockError) throw err;
+        lastError = err;
+        problems.push(
+          `${candidate.release ?? candidate.id}: ${err instanceof Error ? err.message : 'failed'}`,
+        );
+      }
+    }
+    // Quota, authentication and outages are reported as what they are, not as "invalid subtitle".
+    if (lastError instanceof SourceError) throw lastError;
+    throw new JobSourceError(
+      'source_invalid',
+      `No usable source subtitle could be obtained. ${problems.slice(0, 3).join('; ')}`,
+      { cause: lastError },
+    );
   }
 
   /** Segments accepted earlier that still fit the current plan; anything else is discarded. */
@@ -448,6 +663,10 @@ export class JobWorker {
       return;
     }
     try {
+      if (error instanceof DeferJobError && !run.reason) {
+        await deferJob(db, run.job, workerId, error.delayMs, `Waiting: ${error.message}`);
+        return;
+      }
       if (run.reason === 'cancel') {
         await cancelOwnedJob(db, run.job, workerId);
         logger?.info({ jobId }, 'job cancelled');

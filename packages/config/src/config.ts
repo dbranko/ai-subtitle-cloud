@@ -49,6 +49,19 @@ const envSchema = z.object({
     .int()
     .min(1024)
     .default(5 * 1024 * 1024),
+  OPENSUBTITLES_API_KEY: optionalString,
+  OPENSUBTITLES_USERNAME: optionalString,
+  OPENSUBTITLES_PASSWORD: optionalString,
+  OPENSUBTITLES_USER_AGENT: z.string().default('AISubtitleCloud v0.1.0'),
+  SOURCE_LANGUAGES: z.string().default('en'),
+  SOURCE_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .default(2 * 1024 * 1024),
+  SOURCE_RETRY_MINUTES: z.coerce.number().int().min(0).default(30),
+  CACHE_MAX_AGE_DAYS: z.coerce.number().int().min(0).default(0),
+  CACHE_MAX_SIZE_MB: z.coerce.number().int().min(0).default(0),
   MOCK_AI: bool(false),
   MOCK_AI_DELAY_MS: z.coerce.number().int().min(0).default(1000),
 
@@ -118,6 +131,29 @@ export interface AppConfig {
     segmentMaxAttempts: number;
     /** Largest accepted subtitle upload. */
     maxUploadBytes: number;
+  };
+  sources: {
+    /** OpenSubtitles official API. Disabled without an API key. */
+    openSubtitles: {
+      apiKey: string | undefined;
+      /** Optional account; raises the daily download quota. */
+      username: string | undefined;
+      password: string | undefined;
+      /** Required by the API: identifies this application. */
+      userAgent: string;
+    };
+    /** Source languages to look for, most preferred first. */
+    languages: string[];
+    /** Largest source subtitle accepted from a remote source. */
+    maxBytes: number;
+    /** After a failed search for a title, wait this long before searching again. */
+    retryMinutes: number;
+  };
+  cache: {
+    /** Remove cached translations not used for this many days (0 = keep forever). */
+    maxAgeDays: number;
+    /** Keep the cache below this size by removing the least recently used (0 = unlimited). */
+    maxSizeMb: number;
   };
   /** Use the built-in mock translator instead of a real provider (no API calls, no cost). */
   mockAi: { enabled: boolean; delayMs: number };
@@ -209,6 +245,20 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       segmentMaxAttempts: e.SEGMENT_MAX_ATTEMPTS,
       maxUploadBytes: e.MAX_UPLOAD_BYTES,
     },
+    sources: {
+      openSubtitles: {
+        apiKey: e.OPENSUBTITLES_API_KEY,
+        username: e.OPENSUBTITLES_USERNAME,
+        password: e.OPENSUBTITLES_PASSWORD,
+        userAgent: e.OPENSUBTITLES_USER_AGENT,
+      },
+      languages: e.SOURCE_LANGUAGES.split(',')
+        .map((l) => l.trim())
+        .filter((l) => l !== ''),
+      maxBytes: e.SOURCE_MAX_BYTES,
+      retryMinutes: e.SOURCE_RETRY_MINUTES,
+    },
+    cache: { maxAgeDays: e.CACHE_MAX_AGE_DAYS, maxSizeMb: e.CACHE_MAX_SIZE_MB },
     mockAi: { enabled: e.MOCK_AI, delayMs: e.MOCK_AI_DELAY_MS },
     ai: {
       apiKeys: definedOnly({
@@ -287,6 +337,17 @@ export function describeConfig(config: AppConfig): Record<string, unknown> {
     worker: config.worker,
     jobs: config.jobs,
     mockAi: config.mockAi,
+    sources: {
+      openSubtitles: {
+        apiKeyConfigured: config.sources.openSubtitles.apiKey !== undefined,
+        accountConfigured: config.sources.openSubtitles.username !== undefined,
+        userAgent: config.sources.openSubtitles.userAgent,
+      },
+      languages: config.sources.languages,
+      maxBytes: config.sources.maxBytes,
+      retryMinutes: config.sources.retryMinutes,
+    },
+    cache: config.cache,
     ai: {
       ...config.ai,
       // Keys are reduced to "configured: yes/no".

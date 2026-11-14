@@ -6,7 +6,11 @@ import { describeProviders } from '@asc/ai-providers';
 import { AI_PROVIDER_IDS, type AppConfig } from '@asc/config';
 import type { Database } from '@asc/database';
 import {
+  cacheStats,
+  cleanupCache,
   createJob,
+  createLibrarySource,
+  createSourcesFromConfig,
   JobConflictError,
   JobNotFoundError,
   JobRequestError,
@@ -16,12 +20,14 @@ import {
   markNotificationRead,
   outputPath,
   requestCancel,
+  requestMediaTranslation,
   requireJob,
   retryJob,
   toJobView,
   toNotificationView,
 } from '@asc/jobs';
 import { decodeSubtitleBytes } from '@asc/subtitle-parser';
+import { rankCandidates, SourceError, type SubtitleSource } from '@asc/subtitle-sources';
 import {
   findLanguage,
   listProfiles,
@@ -35,6 +41,8 @@ export interface ApiRouteDeps {
   config: AppConfig;
   db: Database;
   events: EventHub;
+  /** Remote subtitle sources (default: those configured). */
+  sources?: SubtitleSource[] | undefined;
 }
 
 const createJobSchema = z.object({
@@ -60,6 +68,47 @@ const createJobSchema = z.object({
   force: z.boolean().optional(),
 });
 
+const mediaSchema = z.object({
+  type: z.enum(['movie', 'series']),
+  imdbId: z
+    .string()
+    .regex(/^tt\d{5,12}$/)
+    .optional(),
+  title: z.string().max(300).optional(),
+  year: z.number().int().min(1880).max(2200).optional(),
+  season: z.number().int().min(0).max(1000).optional(),
+  episode: z.number().int().min(0).max(100_000).optional(),
+  videoHash: z
+    .string()
+    .regex(/^[0-9a-fA-F]{16}$/)
+    .optional(),
+  videoSize: z.number().int().min(0).optional(),
+  fileName: z.string().max(500).optional(),
+});
+
+const candidateSchema = z.object({
+  source: z.string().min(1).max(40),
+  id: z.string().min(1).max(100),
+  language: z.string().max(20),
+  release: z.string().max(500).optional(),
+  fileName: z.string().max(500).optional(),
+  hashMatch: z.boolean().default(false),
+  local: z.boolean().optional(),
+});
+
+const mediaJobSchema = z.object({
+  media: mediaSchema,
+  targetLanguage: z.string().min(1).max(20),
+  profile: z.enum(TRANSLATION_PROFILES).optional(),
+  customInstructions: z.string().max(2000).optional(),
+  sourceLanguages: z.array(z.string().max(20)).max(10).optional(),
+  /** A source picked by the owner from a search result; used instead of searching. */
+  source: candidateSchema.optional(),
+  provider: z.enum(AI_PROVIDER_IDS).optional(),
+  model: z.string().max(100).optional(),
+  force: z.boolean().optional(),
+});
+
 function sameToken(given: string, expected: string): boolean {
   const a = Buffer.from(given);
   const b = Buffer.from(expected);
@@ -76,6 +125,8 @@ function presentedToken(req: FastifyRequest): string | undefined {
 
 export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): void {
   const { config, db, events } = deps;
+  const remoteSources = deps.sources ?? createSourcesFromConfig(config);
+  const allSources = [createLibrarySource(db, config), ...remoteSources];
 
   // --- Authentication -------------------------------------------------------
   // Required for every /api route as soon as an AUTH_TOKEN is configured (which
@@ -100,6 +151,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     }
     if (err instanceof JobConflictError) {
       return reply.code(409).send({ error: 'conflict', message: err.message });
+    }
+    if (err instanceof SourceError) {
+      // The subtitle source failed, not this application: say which and why.
+      const status =
+        err.kind === 'auth' || err.kind === 'quota' || err.kind === 'rate_limit' ? 502 : 503;
+      return reply.code(status).send({ error: `source_${err.kind}`, message: err.message });
     }
     if (err instanceof z.ZodError) {
       const issue = err.issues[0];
@@ -135,6 +192,15 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
         model: config.ai.model ?? null,
         profile: config.ai.translationProfile,
       },
+      sources: [
+        { id: 'library', name: 'Your uploads', configured: true },
+        {
+          id: 'opensubtitles',
+          name: 'OpenSubtitles',
+          configured: remoteSources.some((s) => s.id === 'opensubtitles'),
+        },
+      ],
+      defaultSourceLanguages: config.sources.languages,
       mockAi: config.mockAi.enabled,
       maxUploadBytes: config.jobs.maxUploadBytes,
     };
@@ -197,6 +263,67 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     },
   );
 
+  // Translate a title without uploading a subtitle: the job finds a source itself.
+  app.post('/api/v1/jobs/from-media', async (req, reply) => {
+    const body = mediaJobSchema.parse(req.body);
+    const result = await requestMediaTranslation(db, config, {
+      query: body.media,
+      targetLanguage: body.targetLanguage,
+      profile: body.profile,
+      customInstructions: body.customInstructions,
+      sourceLanguages: body.sourceLanguages,
+      pinned: body.source,
+      provider: body.provider,
+      model: body.model,
+      force: body.force,
+    });
+    return reply.code(result.status === 'created' ? 201 : 200).send({
+      status: result.status,
+      job: result.job ? toJobView(result.job) : null,
+      translation: result.translation
+        ? {
+            id: result.translation.id,
+            targetLanguage: result.translation.targetLanguage,
+            entries: result.translation.entries,
+            createdAt: result.translation.createdAt.toISOString(),
+            jobId: result.translation.jobId,
+          }
+        : null,
+    });
+  });
+
+  // Manual mode: show the owner which source subtitles exist, best match first.
+  app.post('/api/v1/sources/search', async (req) => {
+    const body = z
+      .object({
+        media: mediaSchema,
+        languages: z.array(z.string().max(20)).max(10).optional(),
+        targetLanguage: z.string().max(20).optional(),
+      })
+      .parse(req.body);
+    const languages = body.languages?.length ? body.languages : config.sources.languages;
+    const found = [];
+    const failures: { source: string; error: string; message: string }[] = [];
+    for (const source of allSources) {
+      try {
+        found.push(...(await source.search(body.media, languages)));
+      } catch (err) {
+        failures.push({
+          source: source.id,
+          error: err instanceof SourceError ? `source_${err.kind}` : 'source_unavailable',
+          message: err instanceof Error ? err.message : 'Search failed.',
+        });
+      }
+    }
+    return {
+      candidates: rankCandidates(body.media, found, {
+        languages,
+        excludeLanguage: body.targetLanguage,
+      }).slice(0, 50),
+      failures,
+    };
+  });
+
   app.get('/api/v1/jobs', async (req) => {
     const query = z
       .object({
@@ -230,6 +357,11 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     }
     const file = outputPath(config, job.outputFile);
     if (!existsSync(file)) throw new JobNotFoundError(job.id);
+    // Serving a translation counts as using it, for least-recently-used cache cleanup.
+    await db.translation.updateMany({
+      where: { file: job.outputFile },
+      data: { lastUsedAt: new Date() },
+    });
     const base = job.mediaTitle.replace(/[^\p{L}\p{N} ._()-]+/gu, ' ').trim() || 'subtitle';
     const name = `${base}.${job.targetLanguage}.srt`;
     return reply
@@ -240,6 +372,22 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
       )
       .header('cache-control', 'private, no-store')
       .send(createReadStream(file));
+  });
+
+  // --- Cache -----------------------------------------------------------------
+  app.get('/api/v1/cache', async () => ({ ...(await cacheStats(db)), limits: config.cache }));
+
+  app.post('/api/v1/cache/cleanup', async (req) => {
+    const body = z
+      .object({
+        maxAgeDays: z.number().int().min(0).optional(),
+        maxSizeMb: z.number().int().min(0).optional(),
+      })
+      .parse(req.body ?? {});
+    return cleanupCache(db, config, {
+      maxAgeDays: body.maxAgeDays ?? config.cache.maxAgeDays,
+      maxSizeMb: body.maxSizeMb ?? config.cache.maxSizeMb,
+    });
   });
 
   // --- Notifications --------------------------------------------------------

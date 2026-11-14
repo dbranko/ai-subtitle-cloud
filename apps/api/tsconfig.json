@@ -26,6 +26,9 @@
     },
     {
       "path": "../../packages/subtitle-parser"
+    },
+    {
+      "path": "../../packages/subtitle-sources"
     }
   ]
 }

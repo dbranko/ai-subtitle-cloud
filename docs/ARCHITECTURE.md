@@ -56,7 +56,7 @@ makes jobs independent of any HTTP request, browser tab or single process.
 | `@asc/translation-engine` | Languages, segmentation, prompt, response parsing, validation, orchestration, mock translator | 1 **[built]** |
 | `@asc/ai-providers`       | Claude / OpenAI / Gemini providers, manager (retry, fallback, cost), pricing, CLI             | 2 **[built]** |
 | `@asc/jobs`               | Job store, state machine, progress, locking, recovery, events, notifications, `JobWorker`     | 3 **[built]** |
-| `@asc/subtitle-sources`   | Local upload and OpenSubtitles adapters, matching                                             | 4             |
+| `@asc/subtitle-sources`   | Source adapter interface, OpenSubtitles, ranking, safe download, source validation            | 4 **[built]** |
 
 Dependency direction: `apps → packages`; `translation-engine → subtitle-parser`;
 `ai-providers → translation-engine` (providers implement the engine's `LlmClient` interface).
@@ -72,8 +72,9 @@ Nothing in `packages/` knows about Stremio or HTTP. The engine is described in
   processes can read and write concurrently without `SQLITE_BUSY` errors.
 - Schema changes ship as Prisma migrations (`packages/database/prisma/migrations`), applied
   by `pnpm db:migrate` locally and by the one-shot `migrate` service in Docker Compose.
-- **Filesystem** under `data/`: `subtitles/` (originals and translations), `cache/`,
-  `logs/`, `jobs/` (per-job working files). All paths are configurable.
+- **Filesystem** under `data/`: `subtitles/` (translated files), `cache/sources/` (source
+  subtitles, one file per distinct content), `logs/`, `jobs/` (reserved; currently unused).
+  All paths are configurable.
 
 Current schema (Phase 0): `service_heartbeats` — one row per long-running service
 (`service`, `instanceId`, `pid`, `version`, `startedAt`, `lastSeenAt`). The worker refreshes
@@ -90,7 +91,10 @@ after restart, weighted real progress, an event log that feeds SSE, and persiste
 notifications.
 
 Tables: `translation_jobs`, `job_segments` (checkpoints), `job_events` (event log),
-`notifications`, `service_heartbeats`.
+`notifications`, `service_heartbeats`, `source_subtitles` (source library), `translations`
+(cache), `media_links` (media request → cached translation).
+
+Sources and cache are described in [SOURCES_AND_CACHE.md](SOURCES_AND_CACHE.md).
 
 ## Stremio integration [planned — Phase 5]
 

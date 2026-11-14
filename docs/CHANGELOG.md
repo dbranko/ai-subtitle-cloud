@@ -2,6 +2,72 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 4 — Subtitle sources and cache (2026-11-14)
+
+### Added
+
+- `@asc/subtitle-sources`: `SubtitleSource` adapter interface, OpenSubtitles adapter (official
+  API), candidate ranking, SSRF-safe downloader, source validation, language-code mapping.
+- `@asc/jobs`: source library (`source_subtitles`), translation cache (`translations`),
+  media links (`media_links`), `requestMediaTranslation`, cache statistics and cleanup, source
+  discovery and cache reuse inside the worker pipeline.
+- Database migration `sources_cache`.
+- API: `POST /api/v1/jobs/from-media`, `POST /api/v1/sources/search`, `GET /api/v1/cache`,
+  `POST /api/v1/cache/cleanup`; sources in `/api/v1/meta`; `cacheHit` on jobs.
+- Dashboard: "Translate by IMDb ID" form; "reused from cache" marker.
+- Settings: `OPENSUBTITLES_*`, `SOURCE_*`, `CACHE_*`.
+- `docs/SOURCES_AND_CACHE.md`.
+
+### Decisions
+
+1. **Source discovery runs in the worker, never in a request.** A media request only creates
+   or finds a job; searching and downloading are the job's first two stages.
+2. **Sources are stored once per content.** Uploads and downloads share one library, which
+   is also the "local source" and the store of original subtitles the cache must keep.
+3. **Two keys.** The _media key_ identifies what was asked for (title, video file, target);
+   the _translation key_ identifies what is translated (subtitle content, target, prompt
+   and engine version). The cache is keyed by content, so different video files that lead to
+   the same subtitle share one translation.
+4. **An owner upload always wins the ranking**, even over a hash-matched download: it was
+   put there on purpose.
+5. **A subtitle in the target language is never used as a source**, and machine-translated
+   subtitles are strongly avoided.
+6. **A job that would duplicate a running translation waits and then reuses the result**
+   instead of failing or translating twice.
+7. **Failed searches are remembered for `SOURCE_RETRY_MINUTES`**, so repeated plays of a
+   title without subtitles cause one search and one notification, not one per play.
+8. **A cache hit still passes every job state** (instantly) and completes normally, with
+   `cacheHit: true`; no special terminal path.
+9. **Cleanup protects by source:** nothing connected to an active job's source is removed.
+   Uploads are never removed. Limits default to "keep everything".
+10. **Cache files stay where job outputs already were** (subtitles directory); sources live
+    under the cache directory. `data/jobs/` is no longer used.
+11. **Only SRT sources are accepted** (`sub_format: "srt"` is requested; anything else is
+    rejected by validation).
+12. **A concurrency bug was fixed:** temporary file names for atomic writes were not unique
+    within one process and millisecond; simultaneous identical uploads could fail.
+
+### Verified
+
+- 500 automated tests, 9 browser tests.
+- Sources, matching, validation, SSRF protection and the OpenSubtitles adapter are tested
+  against simulated responses; the library, cache, duplicate handling and cleanup against
+  the real worker and database.
+
+### Known limitations / open items
+
+- **OpenSubtitles has not been called live.** No API key was available, the API host is not
+  reachable from the development environment, and the official documentation could not be
+  read from there. Request and response shapes follow the published API as known; expect
+  possible small fixes on the first real run. Whether downloads work without an account
+  login is also unverified.
+- The source search is limited to the configured source languages (`SOURCE_LANGUAGES`,
+  default English).
+- No video hash is computed here; it must come from the player (Stremio provides it).
+- Existing databases created before this phase keep working, but jobs created earlier refer
+  to source files in the old location and cannot be retried.
+- The dashboard has only a minimal form for media requests; source selection UI is Phase 6.
+
 ## Phase 3 — Persistent async job engine and progress system (2026-11-14)
 
 ### Added

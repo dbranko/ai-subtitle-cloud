@@ -10,8 +10,8 @@ updated, no known critical error remains and a summary has been reported.
 | 0     | Project foundation                                                     | Done (approved)              |
 | 1     | SRT engine                                                             | Done (approved)              |
 | 2     | AI providers                                                           | Done (approved)              |
-| 3     | Persistent async job engine and progress system (**highest priority**) | **Done — awaiting approval** |
-| 4     | Subtitle sources and cache                                             | Not started                  |
+| 3     | Persistent async job engine and progress system (**highest priority**) | Done (approved)              |
+| 4     | Subtitle sources and cache                                             | **Done — awaiting approval** |
 | 5     | Stremio add-on                                                         | Not started                  |
 | 6     | Dashboard and notifications                                            | Not started                  |
 | 7     | Full integration and reliability                                       | Not started                  |
@@ -83,12 +83,23 @@ Details: [AI_PROVIDERS.md](AI_PROVIDERS.md).
 (`apps/api`) and in a real browser against real processes (`e2e`). See the table in
 [PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md).
 
-## Phase 4 — Subtitle sources and cache
+## Phase 4 — Subtitle sources and cache ✅
 
-Local SRT source, OpenSubtitles official API adapter (if configured), matching, source
-validation, cache, connection of source discovery to the job engine.
-**Deliverable:** find or receive a subtitle, reuse completed translations, start background
-jobs for new ones.
+- [x] Local source: uploads are stored in a content-addressed library and found by IMDb id.
+- [x] OpenSubtitles adapter on the official API (enabled by `OPENSUBTITLES_API_KEY`).
+- [x] Matching: IMDb id, title, year, season, episode, video hash, release information.
+- [x] Source validation and safe downloads (SSRF protection).
+- [x] Translation cache keyed by source hash, target, script, profile, prompt and engine
+      version; configurable cleanup that never touches files of active jobs.
+- [x] Duplicate prevention for media requests, before and after the source is known.
+- [x] Source discovery runs inside the background job (`locating_source`,
+      `downloading_source`).
+- [ ] Live run against the real OpenSubtitles service — not possible yet (no API key, host
+      not reachable from the development environment).
+
+**Deliverable met:** the system can find or receive a subtitle, reuse completed
+translations and start background jobs for new ones. Details:
+[SOURCES_AND_CACHE.md](SOURCES_AND_CACHE.md).
 
 ## Phase 5 — Stremio add-on
 

@@ -1,4 +1,5 @@
 import { AllProvidersFailedError, ProviderConfigError, ProviderError } from '@asc/ai-providers';
+import { SourceError, SourceValidationError } from '@asc/subtitle-sources';
 import {
   SegmentFailedError,
   SourceSubtitleError,
@@ -50,6 +51,32 @@ export class JobStorageError extends Error {
   }
 }
 
+/** A discovery job could not obtain a usable source subtitle. */
+export class JobSourceError extends Error {
+  override name = 'JobSourceError';
+  constructor(
+    readonly code: 'source_not_found' | 'source_invalid' | 'source_unavailable',
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+  }
+}
+
+/**
+ * Not a failure: the job must wait (another job is already producing the very
+ * same translation). It goes back to the queue and is looked at again later.
+ */
+export class DeferJobError extends Error {
+  override name = 'DeferJobError';
+  constructor(
+    message: string,
+    readonly delayMs = 5000,
+  ) {
+    super(message);
+  }
+}
+
 export interface JobFailure {
   code: string;
   message: string;
@@ -61,7 +88,11 @@ const MAX_MESSAGE = 500;
 export function describeFailure(err: unknown): JobFailure {
   const text = (err instanceof Error ? err.message : String(err)).replace(/\s+/g, ' ').trim();
   const message = text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE)}…` : text;
-  if (err instanceof JobStorageError) return { code: err.code, message };
+  if (err instanceof JobStorageError || err instanceof JobSourceError) {
+    return { code: err.code, message };
+  }
+  if (err instanceof SourceError) return { code: `source_${err.kind}`, message };
+  if (err instanceof SourceValidationError) return { code: 'source_invalid', message };
   if (err instanceof SourceSubtitleError) return { code: 'source_invalid', message };
   if (err instanceof UnsupportedLanguageError || err instanceof TranslationRequestError) {
     return { code: 'invalid_request', message };

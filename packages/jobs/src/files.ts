@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { AppConfig } from '@asc/config';
@@ -12,9 +13,12 @@ function assertSafe(part: string): string {
   return part;
 }
 
-/** Source subtitle path relative to the jobs directory. */
-export function sourceFileName(jobId: string): string {
-  return join(assertSafe(jobId), 'source.srt');
+const SAFE_HASH = /^[a-f0-9]{64}$/;
+
+/** Source subtitle path relative to the cache directory. One file per distinct content. */
+export function sourceFileName(sourceHash: string): string {
+  if (!SAFE_HASH.test(sourceHash)) throw new Error('Invalid source hash.');
+  return join('sources', `${sourceHash}.srt`);
 }
 
 /** Output file name relative to the subtitles directory. */
@@ -23,7 +27,7 @@ export function outputFileName(jobId: string, targetLanguage: string): string {
 }
 
 export function sourcePath(config: AppConfig, sourceFile: string): string {
-  return join(config.paths.jobsDir, sourceFile);
+  return join(config.paths.cacheDir, sourceFile);
 }
 
 export function outputPath(config: AppConfig, outputFile: string): string {
@@ -33,7 +37,8 @@ export function outputPath(config: AppConfig, outputFile: string): string {
 /** Write a file so that readers see either the old content or the complete new content. */
 export async function writeFileAtomic(path: string, content: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  const temp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  // Unique per call: several requests may store the same file at the same moment.
+  const temp = `${path}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
   try {
     await writeFile(temp, content, 'utf8');
     await rename(temp, path);
@@ -51,8 +56,4 @@ export async function readSource(config: AppConfig, sourceFile: string): Promise
       cause: err,
     });
   }
-}
-
-export async function removeJobFiles(config: AppConfig, jobId: string): Promise<void> {
-  await rm(join(config.paths.jobsDir, assertSafe(jobId)), { recursive: true, force: true });
 }

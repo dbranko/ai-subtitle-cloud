@@ -1,13 +1,31 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
   "include": ["src"],
   "references": [
-    { "path": "../shared" },
-    { "path": "../config" },
-    { "path": "../database" },
-    { "path": "../subtitle-parser" },
-    { "path": "../translation-engine" },
-    { "path": "../ai-providers" }
+    {
+      "path": "../shared"
+    },
+    {
+      "path": "../config"
+    },
+    {
+      "path": "../database"
+    },
+    {
+      "path": "../subtitle-parser"
+    },
+    {
+      "path": "../translation-engine"
+    },
+    {
+      "path": "../ai-providers"
+    },
+    {
+      "path": "../subtitle-sources"
+    }
   ]
 }

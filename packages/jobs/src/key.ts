@@ -39,3 +39,47 @@ export function computeTranslationKey(input: TranslationKeyInput): string {
     ]),
   );
 }
+
+export interface MediaKeyInput {
+  type: string;
+  imdbId?: string | undefined;
+  title?: string | undefined;
+  year?: number | undefined;
+  season?: number | undefined;
+  episode?: number | undefined;
+  videoHash?: string | undefined;
+  /** A source the owner picked by hand, if any. */
+  pinned?: string | undefined;
+  targetLanguage: string;
+  targetScript: string;
+  profile: string;
+  customInstructions?: string | undefined;
+}
+
+/**
+ * Key of a media request: "this title/episode, for this video file, into this
+ * language". Used before the source subtitle is known — to recognise repeated
+ * requests (Stremio asks again on every play) and to find the cached result.
+ */
+export function computeMediaKey(input: MediaKeyInput): string {
+  return sha256(
+    JSON.stringify([
+      input.type,
+      (input.imdbId ?? '').toLowerCase(),
+      input.imdbId ? '' : (input.title ?? '').trim().toLowerCase(),
+      input.imdbId ? '' : (input.year ?? ''),
+      input.season ?? '',
+      input.episode ?? '',
+      (input.videoHash ?? '').toLowerCase(),
+      input.pinned ?? '',
+      input.targetLanguage,
+      input.targetScript,
+      input.profile,
+      (input.customInstructions ?? '').trim(),
+    ]),
+  );
+}
+
+/** Translation key of a job that has not found its source yet. */
+export const provisionalKey = (mediaKey: string) => `media:${mediaKey}`;
+export const isProvisionalKey = (key: string) => key.startsWith('media:');

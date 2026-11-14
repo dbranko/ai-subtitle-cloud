@@ -138,7 +138,7 @@ describe('POST /api/v1/jobs', () => {
     const { job } = res.json<{ job: JobView }>();
     expect(job).toMatchObject({ mediaTitle: 'film', sourceLanguage: 'hr', totalEntries: 2 });
     const row = await t.db.translationJob.findUniqueOrThrow({ where: { id: job.id } });
-    expect(readFileSync(sourcePath(config, row.sourceFile), 'utf8')).toContain(
+    expect(readFileSync(sourcePath(config, row.sourceFile ?? ''), 'utf8')).toContain(
       'Što se događa, Željko?',
     );
   });

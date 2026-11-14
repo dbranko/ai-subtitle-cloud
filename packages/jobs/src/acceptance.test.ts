@@ -417,8 +417,10 @@ describe('TEST E — duplicate requests', () => {
     expect(forced.job.id).not.toBe(job.id);
     // …or the stored file is gone.
     await waitForJob(ctx.db, forced.job.id);
-    for (const j of await ctx.db.translationJob.findMany())
-      rmSync(outputPath(ctx.config, j.outputFile!));
+    // The forced translation replaced the cached file; the older job now points at the new one.
+    const files = new Set((await ctx.db.translationJob.findMany()).map((j) => j.outputFile!));
+    expect(files.size).toBe(1);
+    for (const file of files) rmSync(outputPath(ctx.config, file));
     expect((await submit(ctx)).created).toBe(true);
   });
 

@@ -57,6 +57,42 @@ Response: `201` when a job was created, `200` when an existing one is returned.
 `reason`: `created`, `active` (identical job already queued or running), `completed`
 (identical finished translation exists).
 
+### Create from media — `POST /api/v1/jobs/from-media`
+
+Translate a title without uploading a subtitle; the job finds a source itself. Returns
+immediately. Safe to call repeatedly.
+
+```json
+{
+  "media": {
+    "type": "series",
+    "imdbId": "tt0903747",
+    "season": 2,
+    "episode": 5,
+    "title": "Breaking Bad",
+    "videoHash": "abcdef0123456789",
+    "fileName": "Breaking.Bad.S02E05.720p.BluRay.x264-GROUP.mkv"
+  },
+  "targetLanguage": "sr-Latn"
+}
+```
+
+Optional: `profile`, `customInstructions`, `sourceLanguages`, `provider`, `model`, `force`,
+and `source` (a candidate from the search endpoint, to use instead of searching).
+
+Response (`201` when a job was created, otherwise `200`):
+
+```json
+{ "status": "created", "job": { "…": "JobView" }, "translation": null }
+```
+
+| `status`  | Meaning                                                                 |
+| --------- | ----------------------------------------------------------------------- |
+| `created` | A new job was queued                                                    |
+| `active`  | A job for this request is already queued or running (`job`)             |
+| `cached`  | A finished translation exists (`translation`, and `job` to download it) |
+| `failed`  | A recent attempt failed and is not retried yet (`job.error`)            |
+
 ### Read
 
 - `GET /api/v1/jobs?scope=active|finished|all&limit=50` → `{ "jobs": [JobView] }`
@@ -107,6 +143,7 @@ Response: `201` when a job was created, `200` when an existing one is returned.
   "error": null,
   "cancelRequested": false,
   "hasOutput": false,
+  "cacheHit": false,
   "createdAt": "…",
   "startedAt": "…",
   "updatedAt": "…",
@@ -117,6 +154,30 @@ Response: `201` when a job was created, `200` when an existing one is returned.
 
 `etaSeconds` is `null` until it can be estimated. `costUsd` is `null` when a model has no
 configured price. `error` is `{ code, message, stage }` for failed jobs.
+
+## Sources — `POST /api/v1/sources/search`
+
+Manual mode: list source subtitles for a title, best match first.
+
+```json
+{
+  "media": { "type": "movie", "imdbId": "tt0111161" },
+  "languages": ["en"],
+  "targetLanguage": "sr-Latn"
+}
+```
+
+Returns `{ candidates: [...], failures: [...] }`. Each candidate has `source`, `id`,
+`language`, `release`, `fileName`, `hashMatch`, quality flags, `score` and `reasons`. A
+source that failed is listed in `failures` (`source_quota`, `source_auth`, …) without
+failing the search. Pass a candidate as `source` to `POST /api/v1/jobs/from-media` to use it.
+
+## Cache
+
+- `GET /api/v1/cache` — counts and sizes of cached translations and stored sources, and the
+  configured limits.
+- `POST /api/v1/cache/cleanup` — run cleanup now; optional `{ "maxAgeDays": 30, "maxSizeMb": 500 }`
+  overrides the configured limits for this run. Returns what was removed.
 
 ## Notifications
 

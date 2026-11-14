@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { resolveTargets, type AiProviderId } from '@asc/ai-providers';
 import type { AppConfig } from '@asc/config';
@@ -8,13 +7,20 @@ import {
   type Database,
   type JobEvent,
   type Notification,
+  type SourceSubtitle,
+  type Translation,
   type TranslationJob,
 } from '@asc/database';
+import type { MediaQuery, SourceCandidate } from '@asc/subtitle-sources';
 import {
+  ENGINE_VERSION,
   findLanguage,
   MOCK_MODEL,
   MOCK_PROVIDER,
+  isTranslationProfileId,
   prepareTranslation,
+  PROMPT_VERSION,
+  resolveTargetLanguage,
   SourceSubtitleError,
   TranslationRequestError,
   UnsupportedLanguageError,
@@ -23,19 +29,20 @@ import {
 } from '@asc/translation-engine';
 import {
   JobConflictError,
+  DeferJobError,
   JobNotFoundError,
   JobRequestError,
   LostLockError,
   type JobFailure,
 } from './errors.js';
+import { outputPath } from './files.js';
+import { computeMediaKey, computeTranslationKey, isProvisionalKey, provisionalKey } from './key.js';
 import {
-  outputPath,
-  removeJobFiles,
-  sourceFileName,
-  sourcePath,
-  writeFileAtomic,
-} from './files.js';
-import { computeTranslationKey, hashSource } from './key.js';
+  fileSize,
+  findCachedMediaTranslation,
+  findCachedTranslation,
+  storeSource,
+} from './library.js';
 import { computePercentage } from './progress.js';
 import { ACTIVE_STATES, assertTransition, isTerminal, type JobState } from './states.js';
 import {
@@ -174,26 +181,26 @@ export async function createJob(
     throw err;
   }
 
-  let provider: string;
-  let model: string;
-  if (config.mockAi.enabled) {
-    provider = MOCK_PROVIDER;
-    model = MOCK_MODEL;
-  } else {
-    const target = resolveTargets(config, { provider: input.provider, model: input.model }).primary;
-    if (!config.ai.apiKeys[target.provider]) {
-      throw new JobRequestError(
-        'provider_not_configured',
-        `No API key is configured for the AI provider "${target.provider}".`,
-      );
-    }
-    provider = target.provider;
-    model = target.model;
-  }
+  const { provider, model } = resolveProvider(config, input);
 
-  const sourceHash = hashSource(plan.entries);
+  const source = await storeSource(
+    db,
+    config,
+    {
+      srt: input.srt,
+      entries: plan.entries,
+      provider: 'upload',
+      language: plan.sourceLanguage?.id,
+      fileName: input.sourceName,
+      mediaType: input.mediaType,
+      imdbId: input.imdbId,
+      season: input.season,
+      episode: input.episode,
+    },
+    now,
+  );
   const translationKey = computeTranslationKey({
-    sourceHash,
+    sourceHash: source.hash,
     targetLanguage: plan.targetLanguage.id,
     targetScript: plan.targetLanguage.script,
     profile: plan.profile,
@@ -204,19 +211,16 @@ export async function createJob(
   if (active) return { job: active, created: false, reason: 'active' };
 
   if (!input.force) {
-    const finished = await db.translationJob.findFirst({
-      where: { translationKey, state: 'completed', outputFile: { not: null } },
-      orderBy: { completedAt: 'desc' },
-    });
-    if (finished?.outputFile && existsSync(outputPath(config, finished.outputFile))) {
-      return { job: finished, created: false, reason: 'completed' };
-    }
+    // Translation cache: an identical finished translation is handed back, not redone.
+    const cached = await findCachedTranslation(db, config, translationKey, now);
+    const producer = cached
+      ? await db.translationJob.findUnique({ where: { id: cached.jobId } })
+      : null;
+    if (producer?.state === 'completed')
+      return { job: producer, created: false, reason: 'completed' };
   }
 
   const id = randomUUID();
-  const sourceFile = sourceFileName(id);
-  await writeFileAtomic(sourcePath(config, sourceFile), input.srt);
-
   const title =
     input.mediaTitle?.trim() ||
     input.sourceName?.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim() ||
@@ -231,6 +235,7 @@ export async function createJob(
           activeKey: translationKey,
           state: 'queued',
           origin: input.origin ?? 'manual',
+          force: input.force ?? false,
           mediaTitle: title.slice(0, 300),
           mediaType: input.mediaType ?? null,
           imdbId: input.imdbId ?? null,
@@ -244,8 +249,9 @@ export async function createJob(
           customInstructions: plan.customInstructions ?? null,
           provider,
           model,
-          sourceFile,
-          sourceHash,
+          sourceId: source.id,
+          sourceFile: source.file,
+          sourceHash: source.hash,
           totalEntries: plan.entries.length,
           createdAt: now,
           updatedAt: now,
@@ -256,12 +262,212 @@ export async function createJob(
     });
     return { job, created: true, reason: 'created' };
   } catch (err) {
-    await removeJobFiles(config, id).catch(() => undefined);
     if (!isUniqueViolation(err)) throw err;
     // Lost the race against an identical request: hand back the job that won.
     const winner = await db.translationJob.findUnique({ where: { activeKey: translationKey } });
     if (!winner) throw err;
     return { job: winner, created: false, reason: 'active' };
+  }
+}
+
+function resolveProvider(
+  config: AppConfig,
+  input: { provider?: AiProviderId | undefined; model?: string | undefined },
+): { provider: string; model: string } {
+  if (config.mockAi.enabled) return { provider: MOCK_PROVIDER, model: MOCK_MODEL };
+  const target = resolveTargets(config, { provider: input.provider, model: input.model }).primary;
+  if (!config.ai.apiKeys[target.provider]) {
+    throw new JobRequestError(
+      'provider_not_configured',
+      `No API key is configured for the AI provider "${target.provider}".`,
+    );
+  }
+  return target;
+}
+
+// ---------------------------------------------------------------------------
+// Media requests: the job finds its own source subtitle
+// ---------------------------------------------------------------------------
+
+/** Stored on a discovery job: what to look for and how. */
+export interface StoredMediaQuery {
+  query: MediaQuery;
+  /** Acceptable source languages, most preferred first. */
+  languages: string[];
+  /** A source the owner picked by hand: used instead of searching. */
+  pinned?: SourceCandidate | undefined;
+}
+
+export interface MediaTranslationInput {
+  query: MediaQuery;
+  targetLanguage: string;
+  profile?: TranslationProfileId | undefined;
+  customInstructions?: string | undefined;
+  /** Source languages to accept; defaults to the configured SOURCE_LANGUAGES. */
+  sourceLanguages?: string[] | undefined;
+  pinned?: SourceCandidate | undefined;
+  provider?: AiProviderId | undefined;
+  model?: string | undefined;
+  origin?: 'manual' | 'stremio' | undefined;
+  force?: boolean | undefined;
+}
+
+export interface MediaTranslationResult {
+  /**
+   * `cached`: a finished translation exists (see `translation`).
+   * `active`: a job for this request is already queued or running.
+   * `created`: a new job was queued.
+   * `failed`: a recent attempt failed; it is not retried yet (see `job.error`).
+   */
+  status: 'cached' | 'active' | 'created' | 'failed';
+  job: TranslationJob | null;
+  translation: Translation | null;
+}
+
+/**
+ * Ask for the translation of a title (movie or episode) without supplying a
+ * subtitle: answered from the cache when possible, otherwise by a background
+ * job that finds a source subtitle itself. Never waits for a translation.
+ *
+ * This is what the Stremio add-on calls. It is safe to call on every play:
+ * repeated requests share one job, a finished translation is served from the
+ * cache, and a title for which nothing was found is not searched again for
+ * `SOURCE_RETRY_MINUTES`.
+ */
+export async function requestMediaTranslation(
+  db: Database,
+  config: AppConfig,
+  input: MediaTranslationInput,
+  now = new Date(),
+): Promise<MediaTranslationResult> {
+  let target;
+  try {
+    target = resolveTargetLanguage(input.targetLanguage);
+  } catch (err) {
+    throw new JobRequestError(
+      'unsupported_language',
+      err instanceof Error ? err.message : 'Unsupported language.',
+    );
+  }
+  const profile = input.profile ?? 'natural';
+  if (!isTranslationProfileId(profile)) {
+    throw new JobRequestError(
+      'invalid_request',
+      `Unknown translation profile: "${String(profile)}".`,
+    );
+  }
+  const customInstructions = input.customInstructions?.trim() || undefined;
+  if (profile === 'custom' && !customInstructions) {
+    throw new JobRequestError(
+      'invalid_request',
+      'The custom profile requires custom instructions.',
+    );
+  }
+  const { query } = input;
+  if (!query.imdbId && !query.title && !input.pinned) {
+    throw new JobRequestError(
+      'invalid_request',
+      'An IMDb id, a title or a chosen source is required.',
+    );
+  }
+  if (
+    query.type === 'series' &&
+    (query.season === undefined || query.episode === undefined) &&
+    !input.pinned
+  ) {
+    throw new JobRequestError(
+      'invalid_request',
+      'A series request needs a season and an episode number.',
+    );
+  }
+
+  const mediaKey = computeMediaKey({
+    type: query.type,
+    imdbId: query.imdbId,
+    title: query.title,
+    year: query.year,
+    season: query.season,
+    episode: query.episode,
+    videoHash: query.videoHash,
+    pinned: input.pinned ? `${input.pinned.source}:${input.pinned.id}` : undefined,
+    targetLanguage: target.id,
+    targetScript: target.script,
+    profile,
+    customInstructions,
+  });
+
+  if (!input.force) {
+    const translation = await findCachedMediaTranslation(db, config, mediaKey, now);
+    if (translation) {
+      const job = await db.translationJob.findUnique({ where: { id: translation.jobId } });
+      return { status: 'cached', job, translation };
+    }
+  }
+  const active = await db.translationJob.findFirst({
+    where: { mediaKey, state: { in: [...ACTIVE_STATES] } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (active) return { status: 'active', job: active, translation: null };
+
+  if (!input.force && config.sources.retryMinutes > 0) {
+    const since = new Date(now.getTime() - config.sources.retryMinutes * 60_000);
+    const failed = await db.translationJob.findFirst({
+      where: { mediaKey, state: 'failed', completedAt: { gt: since } },
+      orderBy: { completedAt: 'desc' },
+    });
+    if (failed) return { status: 'failed', job: failed, translation: null };
+  }
+
+  const { provider, model } = resolveProvider(config, input);
+  const episode =
+    query.season !== undefined && query.episode !== undefined
+      ? ` S${String(query.season).padStart(2, '0')}E${String(query.episode).padStart(2, '0')}`
+      : '';
+  const title = `${query.title?.trim() || query.imdbId || input.pinned?.release || 'Untitled'}${episode}`;
+  const stored: StoredMediaQuery = {
+    query,
+    languages: input.sourceLanguages?.length ? input.sourceLanguages : config.sources.languages,
+    ...(input.pinned ? { pinned: input.pinned } : {}),
+  };
+  const id = randomUUID();
+  try {
+    const job = await write(db, async (tx) => {
+      const created = await tx.translationJob.create({
+        data: {
+          id,
+          translationKey: provisionalKey(mediaKey),
+          activeKey: provisionalKey(mediaKey),
+          mediaKey,
+          mediaQuery: JSON.stringify(stored),
+          state: 'queued',
+          origin: input.origin ?? 'manual',
+          force: input.force ?? false,
+          mediaTitle: title.slice(0, 300),
+          mediaType: query.type,
+          imdbId: query.imdbId ?? null,
+          season: query.season ?? null,
+          episode: query.episode ?? null,
+          targetLanguage: target.id,
+          targetScript: target.script,
+          profile,
+          customInstructions: customInstructions ?? null,
+          provider,
+          model,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      await appendEvent(tx, 'job.created', id, toJobView(created), now);
+      return created;
+    });
+    return { status: 'created', job, translation: null };
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    const winner = await db.translationJob.findUnique({
+      where: { activeKey: provisionalKey(mediaKey) },
+    });
+    if (!winner) throw err;
+    return { status: 'active', job: winner, translation: null };
   }
 }
 
@@ -319,7 +525,11 @@ export async function claimNextJob(
 ): Promise<TranslationJob | null> {
   for (let tries = 0; tries < 5; tries++) {
     const candidate = await db.translationJob.findFirst({
-      where: { state: 'queued', lockedBy: null },
+      where: {
+        state: 'queued',
+        lockedBy: null,
+        OR: [{ runAfter: null }, { runAfter: { lte: now } }],
+      },
       orderBy: { createdAt: 'asc' },
     });
     if (!candidate) return null;
@@ -622,19 +832,41 @@ function describeTarget(job: TranslationJob): string {
   return findLanguage(job.targetLanguage)?.name ?? job.targetLanguage;
 }
 
+export interface JobOutcome {
+  /** File name of the translation, relative to the subtitles directory. */
+  outputFile: string;
+  usedModels: { provider: string; model: string }[];
+  /** True when the file is an existing cached translation that was reused. */
+  cacheHit?: boolean;
+  entries?: number;
+  /** Validation result and statistics of the run, stored with the cache entry. */
+  validation?: unknown;
+  stats?: unknown;
+}
+
 /**
  * Mark an owned job completed. Called only after the translated file is on
  * disk; this is the single place where a job reaches 100%.
+ *
+ * In the same transaction the translation enters the cache (keyed by the
+ * translation key) and, for media requests, the media → translation link is
+ * recorded. Returns the file a replaced cache entry used, for the caller to delete.
  */
 export async function completeJob(
   db: Database,
+  config: AppConfig,
   job: TranslationJob,
   workerId: string,
-  outcome: { outputFile: string; usedModels: { provider: string; model: string }[] },
+  outcome: JobOutcome,
   now = new Date(),
-): Promise<TranslationJob> {
+): Promise<{ job: TranslationJob; replacedFile: string | null }> {
   assertTransition(stateOf(job), 'completed');
-  return writeOwned(
+  if (!job.sourceId || isProvisionalKey(job.translationKey)) {
+    throw new Error('A job cannot complete before its source subtitle is known.');
+  }
+  const sourceId = job.sourceId;
+  let replacedFile: string | null = null;
+  const row = await writeOwned(
     db,
     job,
     workerId,
@@ -643,6 +875,7 @@ export async function completeJob(
       percentage: 100,
       outputFile: outcome.outputFile,
       usedModels: JSON.stringify(outcome.usedModels),
+      cacheHit: outcome.cacheHit ?? false,
       activeKey: null,
       lockedBy: null,
       leaseExpiresAt: null,
@@ -650,19 +883,173 @@ export async function completeJob(
       etaSeconds: null,
       statusDetail: null,
       cancelRequested: false,
+      runAfter: null,
       completedAt: now,
     },
     'job.completed',
     now,
-    (tx, row) =>
-      createNotification(
+    async (tx, updated) => {
+      if (outcome.cacheHit) {
+        await tx.translation.updateMany({
+          where: { translationKey: job.translationKey },
+          data: { lastUsedAt: now },
+        });
+      } else {
+        const entry = {
+          sourceId,
+          targetLanguage: job.targetLanguage,
+          targetScript: job.targetScript,
+          profile: job.profile,
+          customInstructions: job.customInstructions,
+          promptVersion: PROMPT_VERSION,
+          engineVersion: ENGINE_VERSION,
+          models: JSON.stringify(outcome.usedModels),
+          file: outcome.outputFile,
+          entries: outcome.entries ?? job.totalEntries,
+          sizeBytes: fileSize(outputPath(config, outcome.outputFile)),
+          validation: JSON.stringify(outcome.validation ?? null),
+          stats: JSON.stringify(outcome.stats ?? null),
+          jobId: job.id,
+          lastUsedAt: now,
+        };
+        const previous = await tx.translation.findUnique({
+          where: { translationKey: job.translationKey },
+        });
+        if (previous) {
+          // A forced re-translation replaces the cached one; older jobs now point at the new file.
+          if (previous.file !== outcome.outputFile) {
+            replacedFile = previous.file;
+            await tx.translationJob.updateMany({
+              where: { outputFile: previous.file, id: { not: job.id } },
+              data: { outputFile: outcome.outputFile },
+            });
+          }
+          await tx.translation.update({
+            where: { id: previous.id },
+            data: { ...entry, createdAt: now },
+          });
+        } else {
+          await tx.translation.create({
+            data: {
+              id: randomUUID(),
+              translationKey: job.translationKey,
+              ...entry,
+              createdAt: now,
+            },
+          });
+        }
+      }
+      await tx.sourceSubtitle.updateMany({ where: { id: sourceId }, data: { lastUsedAt: now } });
+      if (job.mediaKey) {
+        await tx.mediaLink.upsert({
+          where: { mediaKey: job.mediaKey },
+          create: {
+            mediaKey: job.mediaKey,
+            translationKey: job.translationKey,
+            createdAt: now,
+            updatedAt: now,
+          },
+          update: { translationKey: job.translationKey, updatedAt: now },
+        });
+      }
+      await createNotification(
         tx,
-        row,
+        updated,
         'completed',
         'Translation completed',
-        `${row.mediaTitle} → ${describeTarget(row)}`,
+        `${updated.mediaTitle} → ${describeTarget(updated)}`,
         now,
-      ),
+      );
+    },
+  );
+  return { job: row, replacedFile };
+}
+
+/**
+ * Record the source subtitle a discovery job found. The job keeps its
+ * provisional key for now, so a re-run does not have to search again.
+ */
+export async function recordJobSource(
+  db: Database,
+  job: TranslationJob,
+  workerId: string,
+  source: SourceSubtitle,
+  language: string | null,
+  now = new Date(),
+): Promise<TranslationJob> {
+  return writeOwned(
+    db,
+    job,
+    workerId,
+    {
+      sourceId: source.id,
+      sourceFile: source.file,
+      sourceHash: source.hash,
+      sourceLanguage: language,
+      sourceName: source.fileName ?? source.release ?? job.sourceName,
+      totalEntries: source.entries,
+    },
+    'job.updated',
+    now,
+  );
+}
+
+/**
+ * Switch a discovery job from its provisional (media) key to the real,
+ * content-based translation key. From here on it is deduplicated against
+ * every other job translating the same subtitle.
+ *
+ * @throws DeferJobError when another active job already holds that key: this
+ *         job then waits and later picks the result up from the cache.
+ */
+export async function adoptTranslationKey(
+  db: Database,
+  job: TranslationJob,
+  workerId: string,
+  translationKey: string,
+  now = new Date(),
+): Promise<TranslationJob> {
+  try {
+    return await writeOwned(
+      db,
+      job,
+      workerId,
+      { translationKey, activeKey: translationKey },
+      'job.updated',
+      now,
+    );
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    throw new DeferJobError('The same subtitle is already being translated by another job.');
+  }
+}
+
+/** Send an owned job back to the queue to be looked at again after `delayMs`. Not a failure. */
+export async function deferJob(
+  db: Database,
+  job: TranslationJob,
+  workerId: string,
+  delayMs: number,
+  note: string,
+  now = new Date(),
+): Promise<TranslationJob> {
+  assertTransition(stateOf(job), 'queued');
+  return writeOwned(
+    db,
+    job,
+    workerId,
+    {
+      state: 'queued',
+      lockedBy: null,
+      leaseExpiresAt: null,
+      currentSegment: null,
+      etaSeconds: null,
+      statusDetail: note,
+      runAfter: new Date(now.getTime() + delayMs),
+      percentage: percentageFor(job, 'queued'),
+    },
+    'job.updated',
+    now,
   );
 }
 

@@ -202,6 +202,7 @@ function JobCard({ job, now, onError }: { job: Job; now: number; onError: (m: st
           </a>
         )}
         {job.attempt > 1 && <span className="muted small">run {job.attempt}</span>}
+        {job.cacheHit && <span className="muted small">reused from cache</span>}
       </footer>
     </article>
   );
@@ -357,6 +358,133 @@ function NewJobForm({ meta, onMessage }: { meta: Meta; onMessage: (m: string) =>
       <div className="actions">
         <button type="submit" className="primary" disabled={busy || !file} data-testid="start">
           {busy ? 'Starting…' : 'Start translation'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Translate a title without uploading anything: the job finds a source subtitle itself. */
+function MediaJobForm({ meta, onMessage }: { meta: Meta; onMessage: (m: string) => void }) {
+  const [type, setType] = useState<'movie' | 'series'>('movie');
+  const [imdbId, setImdbId] = useState('');
+  const [title, setTitle] = useState('');
+  const [season, setSeason] = useState('1');
+  const [episode, setEpisode] = useState('1');
+  const [target, setTarget] = useState(() => localStorage.getItem('asc.target') ?? 'sr-Latn');
+  const [busy, setBusy] = useState(false);
+  const remote = meta.sources.some((s) => s.id !== 'library' && s.configured);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const result = await api.createMediaJob({
+        media: {
+          type,
+          imdbId: imdbId.trim(),
+          ...(title.trim() ? { title: title.trim() } : {}),
+          ...(type === 'series' ? { season: Number(season), episode: Number(episode) } : {}),
+        },
+        targetLanguage: target,
+      });
+      onMessage(
+        {
+          created:
+            'Looking for a source subtitle — the translation starts as soon as one is found.',
+          active: 'This title is already being translated — showing the existing job.',
+          cached: 'This title is already translated — it is listed below, ready to download.',
+          failed: `A recent attempt for this title failed${result.job?.error ? `: ${result.job.error.message}` : '.'}`,
+        }[result.status],
+      );
+    } catch (err) {
+      onMessage(err instanceof ApiError ? err.message : 'Could not start the translation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card form" onSubmit={(e) => void submit(e)} data-testid="media-job">
+      <h2>Translate by IMDb ID</h2>
+      <p className="muted small">
+        Finds a source subtitle automatically
+        {remote
+          ? ` (your uploads first, then OpenSubtitles; source languages: ${meta.defaultSourceLanguages.join(', ')}).`
+          : ' among your uploads. OpenSubtitles is not configured (OPENSUBTITLES_API_KEY).'}
+      </p>
+      <div className="row">
+        <label>
+          Type
+          <select value={type} onChange={(e) => setType(e.target.value as 'movie' | 'series')}>
+            <option value="movie">Movie</option>
+            <option value="series">Series episode</option>
+          </select>
+        </label>
+        <label>
+          IMDb ID
+          <input
+            value={imdbId}
+            onChange={(e) => setImdbId(e.target.value)}
+            placeholder="tt0111161"
+            pattern="tt\d{5,12}"
+            required
+            data-testid="imdb"
+          />
+        </label>
+        {type === 'series' && (
+          <>
+            <label>
+              Season
+              <input
+                type="number"
+                min={0}
+                value={season}
+                onChange={(e) => setSeason(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Episode
+              <input
+                type="number"
+                min={0}
+                value={episode}
+                onChange={(e) => setEpisode(e.target.value)}
+                required
+              />
+            </label>
+          </>
+        )}
+      </div>
+      <div className="row">
+        <label>
+          Title (optional)
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Shown in the job list"
+          />
+        </label>
+        <label>
+          Translate into
+          <select value={target} onChange={(e) => setTarget(e.target.value)}>
+            {meta.targetLanguages.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="actions">
+        <button
+          type="submit"
+          className="primary"
+          disabled={busy || !imdbId.trim()}
+          data-testid="start-media"
+        >
+          {busy ? 'Starting…' : 'Find subtitle and translate'}
         </button>
       </div>
     </form>
@@ -561,6 +689,7 @@ export function App() {
       )}
 
       {meta && <NewJobForm meta={meta} onMessage={setMessage} />}
+      {meta && <MediaJobForm meta={meta} onMessage={setMessage} />}
 
       <section data-testid="active-jobs">
         <h2>

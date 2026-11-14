@@ -14,6 +14,7 @@
     "@asc/jobs": "workspace:*",
     "@asc/shared": "workspace:*",
     "@asc/subtitle-parser": "workspace:*",
+    "@asc/subtitle-sources": "workspace:*",
     "@asc/translation-engine": "workspace:*",
     "@fastify/rate-limit": "^11.2.2",
     "@fastify/static": "^10.1.11",

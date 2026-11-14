@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { ensureStorageDirs, loadConfig, type AppConfig } from '@asc/config';
 import { createTestDatabase, openDatabase, type Database, type TestDatabase } from '@asc/database';
 import { createLogger } from '@asc/shared';
+import type { SubtitleSource } from '@asc/subtitle-sources';
 import {
   createMockTranslator,
   type MockTranslator,
@@ -70,7 +71,12 @@ let workerSeq = 0;
 export async function createWorker(
   ctx: TestContext,
   translator: SegmentTranslator | TranslatorFactory,
-  options: { separateConnection?: boolean; id?: string; config?: AppConfig } = {},
+  options: {
+    separateConnection?: boolean;
+    id?: string;
+    config?: AppConfig;
+    sources?: SubtitleSource[];
+  } = {},
 ): Promise<JobWorker> {
   let db = ctx.db;
   if (options.separateConnection) {
@@ -82,6 +88,8 @@ export async function createWorker(
     config: options.config ?? ctx.config,
     workerId: options.id ?? `worker-${++workerSeq}`,
     createTranslator: typeof translator === 'function' ? translator : () => translator,
+    // No remote source unless a test supplies one: tests never touch the network.
+    sources: options.sources ?? [],
     logger: createLogger('worker', 'silent'),
   });
   ctx.workers.push(worker);

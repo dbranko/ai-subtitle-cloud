@@ -41,6 +41,7 @@ export interface Job {
   error: { code: string; message: string; stage: string | null } | null;
   cancelRequested: boolean;
   hasOutput: boolean;
+  cacheHit: boolean;
   createdAt: string;
   startedAt: string | null;
   updatedAt: string;
@@ -78,6 +79,8 @@ export interface Meta {
     isPreferred: boolean;
   }[];
   defaults: { provider: string; model: string | null; profile: string };
+  sources: { id: string; name: string; configured: boolean }[];
+  defaultSourceLanguages: string[];
   mockAi: boolean;
   maxUploadBytes: number;
 }
@@ -163,7 +166,25 @@ export interface NewJob {
   force?: boolean;
 }
 
+export interface NewMediaJob {
+  media: {
+    type: 'movie' | 'series';
+    imdbId: string;
+    title?: string;
+    season?: number;
+    episode?: number;
+  };
+  targetLanguage: string;
+  profile?: string;
+}
+
 export const api = {
+  createMediaJob: (job: NewMediaJob) =>
+    request<{ status: 'cached' | 'active' | 'created' | 'failed'; job: Job | null }>(
+      'POST',
+      '/api/v1/jobs/from-media',
+      job,
+    ),
   meta: () => request<Meta>('GET', '/api/v1/meta'),
   createJob: (job: NewJob) =>
     request<{ job: Job; created: boolean; reason: 'created' | 'active' | 'completed' }>(

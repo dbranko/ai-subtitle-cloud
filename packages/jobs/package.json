@@ -19,6 +19,7 @@
     "@asc/database": "workspace:*",
     "@asc/shared": "workspace:*",
     "@asc/subtitle-parser": "workspace:*",
+    "@asc/subtitle-sources": "workspace:*",
     "@asc/translation-engine": "workspace:*"
   }
 }

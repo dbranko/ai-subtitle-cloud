@@ -6,10 +6,10 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phases 0–3 complete.** Subtitles are translated by a persistent background
-> worker with real, segment-level progress, live updates in the dashboard, cancellation,
-> recovery after a restart and completion notifications. Stremio integration comes after
-> subtitle sources and cache — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+> **Status: Phases 0–4 complete.** Subtitles can be uploaded or found automatically
+> (OpenSubtitles, your own uploads), are translated by a persistent background worker with
+> live progress, and finished translations are cached and reused. The Stremio add-on is
+> next — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
 
@@ -94,7 +94,7 @@ packages/
   translation-engine/  Languages, segmentation, prompt, validation, translation orchestration
   jobs/                Persistent jobs: states, progress, locking, recovery, events, worker
   ai-providers/        Claude, OpenAI, Gemini; retry, fallback, cost; `pnpm translate` CLI
-  subtitle-sources/    (Phase 4) Local uploads, OpenSubtitles
+  subtitle-sources/    Source adapters (OpenSubtitles), ranking, safe download, validation
 config/        pricing.json — per-model prices for cost estimates
 fixtures/      Representative subtitle files used by tests
 e2e/           Playwright browser tests
@@ -108,6 +108,7 @@ docs/          Product spec, architecture, roadmap, progress system, security, A
 - [Architecture](docs/ARCHITECTURE.md)
 - [Translation engine](docs/TRANSLATION_ENGINE.md)
 - [AI providers](docs/AI_PROVIDERS.md)
+- [Subtitle sources and cache](docs/SOURCES_AND_CACHE.md)
 - [Development roadmap](docs/DEVELOPMENT_ROADMAP.md)
 - [Progress system](docs/PROGRESS_SYSTEM.md) — the core async job and progress design
 - [Security](docs/SECURITY.md)

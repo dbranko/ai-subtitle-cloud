@@ -30,10 +30,22 @@ model ServiceHeartbeat {
 model TranslationJob {
   id             String  @id
   /// Identifies equivalent requests (source hash + target + profile + prompt/engine version).
+  /// For a job that still has to find its source it is a provisional `media:<mediaKey>`.
   translationKey String
   /// Equals `translationKey` while the job is active, NULL once it is terminal.
   /// The unique index therefore allows at most one ACTIVE job per translation key.
   activeKey      String? @unique
+  /// Identifies the media request (title/episode + video + target + profile) for jobs that
+  /// were asked to find a source themselves. Lets a repeated request find the same job.
+  mediaKey       String?
+  /// JSON of the media query and optional pinned source candidate (discovery jobs only).
+  mediaQuery     String?
+  /// Translate even when an identical cached translation exists.
+  force          Boolean @default(false)
+  /// The job finished by reusing a cached translation; no AI request was made.
+  cacheHit       Boolean @default(false)
+  /// Not claimed by a worker before this time (used while waiting for an identical job).
+  runAfter       DateTime?
   state          String
   /// "manual" (dashboard/API) or "stremio".
   origin         String  @default("manual")
@@ -58,9 +70,11 @@ model TranslationJob {
   /// JSON array of the provider/model pairs that actually produced the translation.
   usedModels         String?
 
-  /// Path of the stored source subtitle, relative to the jobs directory.
-  sourceFile String
-  sourceHash String
+  /// The source subtitle in the library; NULL until a discovery job has found one.
+  sourceId   String?
+  /// Path of the stored source subtitle, relative to the cache directory.
+  sourceFile String?
+  sourceHash String?
   /// File name of the finished translation, relative to the subtitles directory.
   outputFile String?
 
@@ -100,6 +114,8 @@ model TranslationJob {
 
   @@index([state, createdAt])
   @@index([translationKey])
+  @@index([mediaKey])
+  @@index([sourceId])
   @@map("translation_jobs")
 }
 
@@ -150,4 +166,80 @@ model Notification {
   @@unique([jobId, kind, attempt])
   @@index([readAt, createdAt])
   @@map("notifications")
+}
+
+/// Library of source subtitles: every subtitle that was uploaded or downloaded,
+/// stored once per distinct content. Also the "local" subtitle source.
+model SourceSubtitle {
+  id         String   @id
+  /// Hash of the parsed content (independent of encoding and line endings).
+  hash       String   @unique
+  /// Where it came from: "upload" or a source adapter id such as "opensubtitles".
+  provider   String
+  /// The provider's own id of the file, when downloaded.
+  externalId String?
+  language   String?
+  fileName   String?
+  release    String?
+  mediaType  String?
+  imdbId     String?
+  season     Int?
+  episode    Int?
+  /// Hash of the video file this subtitle was matched to, when known.
+  videoHash  String?
+  entries    Int
+  sizeBytes  Int
+  /// Path relative to the cache directory.
+  file       String
+  createdAt  DateTime
+  lastUsedAt DateTime
+
+  translations Translation[]
+
+  @@index([imdbId, season, episode])
+  @@map("source_subtitles")
+}
+
+/// Translation cache: one finished translation per translation key.
+model Translation {
+  id                 String   @id
+  translationKey     String   @unique
+  sourceId           String
+  targetLanguage     String
+  targetScript       String
+  profile            String
+  customInstructions String?
+  promptVersion      String
+  engineVersion      String
+  /// JSON array of provider/model pairs that produced it.
+  models             String
+  /// File name relative to the subtitles directory.
+  file               String
+  entries            Int
+  sizeBytes          Int
+  /// JSON: validation result and processing statistics of the run that produced it.
+  validation         String
+  stats              String
+  /// Job that produced this translation.
+  jobId              String
+  createdAt          DateTime
+  lastUsedAt         DateTime
+
+  source SourceSubtitle @relation(fields: [sourceId], references: [id])
+
+  @@index([lastUsedAt])
+  @@index([sourceId])
+  @@map("translations")
+}
+
+/// Which translation answers a media request (so Stremio can be served from cache
+/// without searching for a source again).
+model MediaLink {
+  mediaKey       String   @id
+  translationKey String
+  createdAt      DateTime
+  updatedAt      DateTime
+
+  @@index([translationKey])
+  @@map("media_links")
 }

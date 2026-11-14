@@ -47,9 +47,15 @@ phase that delivers it.
 - **[built]** Upload size limit (`MAX_UPLOAD_BYTES`) and content validation: an upload that
   does not parse as SRT is rejected before a job exists.
 - **[built]** Stored files are named only by generated job ids and validated language ids.
-- SSRF protection for remote subtitle downloads: HTTPS only, allow-listed hosts for
-  configured sources, private/loopback/link-local address ranges rejected after DNS
-  resolution, redirect and size limits (Phase 4).
+- **[built]** SSRF protection for remote subtitle downloads: HTTPS only, allow-listed
+  domains, no bare IPs, private/loopback/link-local/carrier-NAT/multicast addresses rejected
+  after DNS resolution (IPv4 and IPv6), manual redirects re-checked per hop, size limit.
+  Covered by tests. (A DNS answer could still change between the check and the connection;
+  the domain allow-list is the primary control.)
+- **[built]** Downloaded files are validated as SRT before they are stored or sent to a
+  translator; HTML, archives and other formats are rejected.
+- **[built]** The OpenSubtitles API key and password are sent only to the API host, never to
+  the download host, the browser or logs.
 - Rate limiting on API and add-on endpoints (Phase 3/5).
 - CORS: add-on endpoints allow what the Stremio protocol requires; the API allows only its
   own origin (Phase 5/6).
