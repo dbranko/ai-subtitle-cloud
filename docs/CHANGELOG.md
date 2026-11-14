@@ -47,18 +47,22 @@ Newest first. Each phase records what was added and the decisions made, with rea
 
 ### Known limitations / open items
 
-- **No successful translation by a real provider yet.** A live run reached the real OpenAI
-  API with the owner's key (authentication, endpoint, request format and model id
-  `gpt-6.1-sol` were accepted), but the account had no credits, so no translation came back.
-  That run found and fixed one bug: OpenAI's "no credits remaining" response (HTTP 429, type
-  `insufficient_quota`, code `credit_balance_exhausted`) was classified as a retryable rate
-  limit; it is now a `billing` error that is not retried. Anthropic and Gemini have not been
-  called. `pnpm test:live` must be run with funded keys to close this gap.
-- OpenAI and Gemini model ids were taken from the SDKs' type definitions; their prices from
-  third-party trackers. Neither is verified against official documentation.
+- **Live verification covers OpenAI only.** After credits were added, `pnpm test:live` passed
+  against the real OpenAI API (`gpt-6.1-sol`, English → Serbian Latin and Serbian Cyrillic),
+  and `pnpm translate` produced correct, validated subtitles for the `basic-movie` and
+  `formatting` fixtures (12 and 14 entries, one request each, no retries, about $0.006 each
+  at the configured price). Tags, speaker labels, position settings and symbol-only lines
+  were preserved. An earlier run against an account without credits found and fixed one bug:
+  OpenAI's "no credits remaining" response (HTTP 429, type `insufficient_quota`, code
+  `credit_balance_exhausted`) was classified as a retryable rate limit; it is now a
+  non-retried `billing` error. **Anthropic and Gemini have not been called live.**
+- The Gemini model id was taken from the SDK's type definitions and is unverified; the
+  OpenAI id `gpt-6.1-sol` is confirmed by the live run. OpenAI and Gemini prices come from
+  third-party trackers and are not verified against official documentation.
 - Gemini's `thinkingLevel` mapping and OpenAI's acceptance of `reasoning.effort` values on
   the default models are unverified until a live run.
-- Translation quality (prompt `v1`) has not been judged on real output.
+- Translation quality (prompt `v1`) has only been spot-checked on two short fixtures with
+  OpenAI; it has not been judged on a full film or episode.
 
 ## Phase 1 — SRT engine (2026-11-14)
 

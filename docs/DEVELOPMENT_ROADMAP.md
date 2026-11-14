@@ -56,8 +56,8 @@ structural information. Details: [TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
 - [x] `pnpm translate` command-line translator.
 - [x] Manually triggered live test (`pnpm test:live`), separate from the ordinary suite.
 - [x] 95 new tests driving the real SDKs through a fake HTTP transport.
-- [ ] Successful live translation by a real provider — blocked on a funded API key; see the
-      changelog for what was and was not verified.
+- [x] Successful live translation by a real provider (OpenAI). Anthropic and Gemini are not
+      yet verified live.
 
 Details: [AI_PROVIDERS.md](AI_PROVIDERS.md).
 
