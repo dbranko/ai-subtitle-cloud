@@ -126,6 +126,7 @@ export function scoreCandidate(
 
   // 5. Quality signals.
   if (candidate.machineTranslated) add(-200, 'machine translated');
+  if (candidate.foreignPartsOnly) add(-400, 'covers only the foreign-language parts');
   if (candidate.trusted) add(15, 'from a trusted uploader');
   if (candidate.hearingImpaired) add(-5, 'for the hearing impaired');
   if (candidate.downloads && candidate.downloads > 0) {

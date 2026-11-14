@@ -56,11 +56,17 @@ Newest first. Each phase records what was added and the decisions made, with rea
 
 ### Known limitations / open items
 
-- **OpenSubtitles has not been called live.** No API key was available, the API host is not
-  reachable from the development environment, and the official documentation could not be
-  read from there. Request and response shapes follow the published API as known; expect
-  possible small fixes on the first real run. Whether downloads work without an account
-  login is also unverified.
+- **OpenSubtitles is verified live only in part.** With the owner's key, a movie search by
+  IMDb id, the download endpoint and the file download worked, and one title went through a
+  full job and the cache (AI simulated, to verify the source side without cost). That run
+  added one improvement: subtitles flagged `foreign_parts_only` are now strongly avoided.
+  Episode search, video-hash matching, account login and the quota error are still tested
+  only against simulated responses.
+- Without an OpenSubtitles account the daily download quota is very small (a handful of
+  files); configure the account for regular use.
+- The download safety check resolves host names itself; in an environment where DNS is only
+  available through a proxy (as in the development sandbox) remote downloads are refused.
+  A normal machine or Docker host is not affected.
 - The source search is limited to the configured source languages (`SOURCE_LANGUAGES`,
   default English).
 - No video hash is computed here; it must come from the player (Stremio provides it).

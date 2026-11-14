@@ -30,6 +30,8 @@ export interface SourceCandidate {
   hearingImpaired?: boolean | undefined;
   /** Produced by AI or machine translation — a poor basis for another translation. */
   machineTranslated?: boolean | undefined;
+  /** Contains only the foreign-language parts of the film, not the full dialogue. */
+  foreignPartsOnly?: boolean | undefined;
   /** Uploaded by a trusted user of the source. */
   trusted?: boolean | undefined;
   downloads?: number | undefined;

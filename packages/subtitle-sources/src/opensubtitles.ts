@@ -40,6 +40,7 @@ const searchSchema = z.object({
         ai_translated: z.boolean().nullish(),
         machine_translated: z.boolean().nullish(),
         from_trusted: z.boolean().nullish(),
+        foreign_parts_only: z.boolean().nullish(),
         moviehash_match: z.boolean().nullish(),
         ratings: z.number().nullish(),
         feature_details: z
@@ -194,6 +195,7 @@ export function createOpenSubtitlesSource(options: OpenSubtitlesOptions): Subtit
           hashMatch: a.moviehash_match === true,
           hearingImpaired: a.hearing_impaired ?? undefined,
           machineTranslated: a.ai_translated === true || a.machine_translated === true,
+          foreignPartsOnly: a.foreign_parts_only ?? undefined,
           trusted: a.from_trusted ?? undefined,
           downloads: a.download_count ?? undefined,
           rating: a.ratings ?? undefined,

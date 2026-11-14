@@ -39,10 +39,17 @@ Official REST API only (`https://api.opensubtitles.com/api/v1`), with the owner'
 - Errors are classified: `auth`, `quota` (HTTP 406), `rate_limit`, `unavailable`,
   `not_found`, `invalid_response`, `blocked`.
 
-> **Not verified against the live service.** The official documentation and the API were not
-> reachable from the development environment and no API key was available. The adapter
-> follows the published API as known and is tested against simulated responses in that
-> format. The first real run may need small adjustments.
+**Verified live** (2026-11-14) with the owner's API key: a search for a movie by IMDb id
+returned 50 candidates in the expected format, the download endpoint returned a link on
+`www.opensubtitles.com`, and the file (1717 cues) passed validation and went through a
+complete job; the repeated request was answered from the cache. Not exercised live: episode
+search, video-hash matching, account login, and the quota error.
+
+**Download quota.** Without an account the API allowed only a handful of downloads per day
+in that run (the response reported 4 remaining after the first). Set
+`OPENSUBTITLES_USERNAME` and `OPENSUBTITLES_PASSWORD` for a higher quota. Searching does not
+use the quota, and every downloaded subtitle is kept in the library, so a title costs one
+download however many languages it is translated into.
 
 ## Matching
 

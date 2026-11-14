@@ -145,6 +145,20 @@ describe('matching', () => {
     ).toEqual(['trusted', 'plain', 'sdh', 'machine']);
   });
 
+  it('avoids subtitles that only cover the foreign-language parts', () => {
+    expect(
+      order([
+        candidate('partial', {
+          foreignPartsOnly: true,
+          hashMatch: false,
+          downloads: 900_000,
+          trusted: true,
+        }),
+        candidate('full'),
+      ]),
+    ).toEqual(['full', 'partial']);
+  });
+
   it('prefers a subtitle the owner uploaded for the title', () => {
     const list = [
       candidate('download', { release: movie.fileName, downloads: 100_000 }),
@@ -497,6 +511,7 @@ describe('OpenSubtitles adapter', () => {
         hashMatch: true,
         hearingImpaired: false,
         machineTranslated: false,
+        foreignPartsOnly: undefined,
         trusted: true,
         downloads: 54321,
         rating: 8.5,

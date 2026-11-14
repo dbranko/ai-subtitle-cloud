@@ -94,8 +94,8 @@ Details: [AI_PROVIDERS.md](AI_PROVIDERS.md).
 - [x] Duplicate prevention for media requests, before and after the source is known.
 - [x] Source discovery runs inside the background job (`locating_source`,
       `downloading_source`).
-- [ ] Live run against the real OpenSubtitles service — not possible yet (no API key, host
-      not reachable from the development environment).
+- [x] Live run against the real OpenSubtitles service (movie search, download, full job,
+      cache). Episode search, hash matching and account login are not yet verified live.
 
 **Deliverable met:** the system can find or receive a subtitle, reuse completed
 translations and start background jobs for new ones. Details:
