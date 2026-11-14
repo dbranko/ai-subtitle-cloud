@@ -12,7 +12,7 @@
     "build": "pnpm db:generate && tsc -b && pnpm --filter @asc/dashboard build",
     "build:server": "pnpm db:generate && tsc -b",
     "clean": "tsc -b --clean && pnpm --filter @asc/dashboard clean",
-    "typecheck": "pnpm db:generate && tsc -b && pnpm --filter @asc/dashboard typecheck",
+    "typecheck": "pnpm db:generate && tsc -b && pnpm --filter @asc/dashboard typecheck && tsc -p e2e/tsconfig.json",
     "lint": "pnpm db:generate && eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -27,10 +27,12 @@
     "start:addon": "node apps/addon/dist/main.js",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "translate": "tsx --conditions=asc-source packages/ai-providers/src/cli.ts",
-    "test:live": "vitest run --config vitest.live.config.ts"
+    "test:live": "vitest run --config vitest.live.config.ts",
+    "test:e2e": "pnpm build && playwright test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.0.0",
     "eslint": "^10.15.0",
     "eslint-config-prettier": "^10.1.8",

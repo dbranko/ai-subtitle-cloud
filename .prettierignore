@@ -6,3 +6,5 @@ data
 packages/database/src/generated
 packages/database/prisma/migrations
 *.srt
+playwright-report
+test-results

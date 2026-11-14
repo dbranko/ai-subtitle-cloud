@@ -20,6 +20,7 @@ COPY packages/subtitle-parser/package.json packages/subtitle-parser/
 COPY packages/ai-providers/package.json packages/ai-providers/
 COPY packages/translation-engine/package.json packages/translation-engine/
 COPY packages/subtitle-sources/package.json packages/subtitle-sources/
+COPY packages/jobs/package.json packages/jobs/
 RUN pnpm install --frozen-lockfile
 
 COPY . .

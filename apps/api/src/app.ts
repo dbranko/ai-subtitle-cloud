@@ -1,10 +1,13 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { findUnwritableStorageDirs, type AppConfig } from '@asc/config';
 import { getHeartbeatStatus, pingDatabase, type Database } from '@asc/database';
 import { buildLiveness, buildReadiness, loggerOptions, type ReadinessCheck } from '@asc/shared';
+import { EventHub, type EventHubOptions } from './events.js';
+import { registerApiRoutes } from './routes.js';
 
 export interface ApiDeps {
   config: AppConfig;
@@ -12,7 +15,12 @@ export interface ApiDeps {
   startedAt?: Date;
   /** Built dashboard directory to serve; defaults to apps/dashboard/dist when it exists. */
   dashboardDir?: string | null;
+  /** Tuning of the real-time event stream (tests use short intervals). */
+  events?: EventHubOptions;
 }
+
+/** Requests per minute allowed per client address on the API routes. */
+const API_RATE_LIMIT = 600;
 
 /** A worker is reported alive while its heartbeat is younger than 3 intervals. */
 const WORKER_STALE_FACTOR = 3;
@@ -26,6 +34,20 @@ export async function buildApp(deps: ApiDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger: config.nodeEnv === 'test' ? false : loggerOptions('api', config.logLevel),
   });
+
+  await app.register(rateLimit, {
+    max: API_RATE_LIMIT,
+    timeWindow: '1 minute',
+    // Health checks and static dashboard files are not limited.
+    allowList: (req) => !req.url.startsWith('/api/'),
+  });
+
+  const events = new EventHub(db, deps.events);
+  // Open event streams would keep the server from shutting down: end them first.
+  app.addHook('preClose', () => {
+    events.close();
+  });
+  registerApiRoutes(app, { config, db, events });
 
   // Liveness: the process is up. Must stay dependency-free and fast.
   app.get('/health', QUIET, () => buildLiveness('api', startedAt));

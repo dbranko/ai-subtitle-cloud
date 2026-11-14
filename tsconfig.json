@@ -8,6 +8,7 @@
     { "path": "packages/ai-providers" },
     { "path": "packages/translation-engine" },
     { "path": "packages/subtitle-sources" },
+    { "path": "packages/jobs" },
     { "path": "apps/api" },
     { "path": "apps/worker" },
     { "path": "apps/addon" }

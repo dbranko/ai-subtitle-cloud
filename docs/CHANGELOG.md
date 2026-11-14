@@ -2,6 +2,80 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 3 — Persistent async job engine and progress system (2026-11-14)
+
+### Added
+
+- `@asc/jobs`: job store, state machine, progress and estimate calculation, translation key,
+  leases and recovery, cancellation, event log, notifications, `JobWorker`.
+- Database migration `job_engine`: `translation_jobs`, `job_segments`, `job_events`,
+  `notifications`.
+- Worker process runs the job loop; graceful shutdown returns jobs to the queue.
+- API: jobs (create, list, get, cancel, retry, download), notifications, metadata, SSE event
+  stream, `AUTH_TOKEN` enforcement, rate limiting.
+- Dashboard: upload form, live job cards (stage, percentage, segments, current segment,
+  elapsed, remaining, retries, cost, errors), cancel/retry/download, notifications with
+  opt-in desktop notifications and optional sound, connection indicator.
+- Mock mode (`MOCK_AI`) to run the whole system without an AI provider.
+- Playwright suite (`e2e/`, `pnpm test:e2e`) with a harness that starts, kills and restarts
+  real api and worker processes.
+
+### Decisions
+
+1. **One active job per translation key through a nullable unique column (`activeKey`)**
+   instead of a partial index: plain SQL that Prisma migrations manage without drift.
+2. **Leases, not heartbeats, decide ownership.** A job is recovered when its lease expires
+   (default 30 s); every write is compare-and-set on the owner, so a worker that was only
+   slow — not dead — cannot corrupt a job that was taken over.
+3. **Recovery resumes; it does not restart.** Each accepted segment is a checkpoint written
+   in the same transaction as the progress counters.
+4. **Bounded automatic recovery.** After `JOB_MAX_ATTEMPTS` runs the job fails explicitly
+   with `interrupted_by_restart` and can be retried by the owner.
+5. **Graceful shutdown releases jobs immediately**, so a normal restart costs no lease wait.
+6. **Cancellation is a request plus an acknowledgement.** The job is `cancelled` only when
+   the worker has stopped; partial work is deleted and nothing is published.
+7. **SSE always starts with a snapshot.** Simpler and stricter than replaying missed events:
+   state after a reconnect is correct even if the API restarted or events were pruned.
+   Events carry complete objects, so they are idempotent.
+8. **The API tails the event log** (300 ms, only while a browser is connected) because the
+   worker is another process. One query serves all clients; browsers never poll.
+9. **The percentage is one pure function** of stored state and segment counts; it is stored
+   on every write and never computed in the browser.
+10. **A resumed job keeps the credit of accepted segments** during the early stages, so the
+    displayed percentage never decreases.
+11. **No estimate before two measured segments**; `null` instead of a guess.
+12. **Notifications are unique per (job, kind, run)** and created in the terminal
+    transaction. Cancelled jobs do not notify.
+13. **Uploads are sent as base64 bytes** and decoded on the server, so legacy code pages are
+    handled correctly instead of being mangled by the browser.
+14. **Finished identical translations are reused** already now (`reason: "completed"`); the
+    full cache with cleanup follows in Phase 4.
+15. **`locating_source` and `downloading_source` are passed through** for uploads; real
+    source discovery plugs in there in Phase 4.
+16. **Write-first transactions with a busy retry** keep three processes on one SQLite file
+    free of lock errors.
+
+### Verified
+
+- 395 automated tests (`pnpm test`), 9 browser tests (`pnpm test:e2e`); all mandatory tests
+  A–J pass.
+- One real translation through the full path (API → worker → OpenAI → stored file →
+  notification).
+
+### Known limitations / open items
+
+- Recovery after a hard crash waits for the lease (30 s by default).
+- Elapsed time includes any time the application was down.
+- The remaining-time estimate covers the translation stage only and needs at least three
+  segments in a job to appear.
+- A job's provider and model are fixed when it is created; changing the configuration does
+  not affect queued jobs.
+- Cancelling discards the segments already translated.
+- The dashboard is the minimal progress interface; job details page, history and settings
+  are Phase 6.
+- Browser desktop notifications were tested with a stubbed `Notification` API, not against
+  a real operating-system notification centre.
+
 ## Phase 2 — AI providers (2026-11-14)
 
 ### Added

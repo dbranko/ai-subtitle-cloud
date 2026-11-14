@@ -16,10 +16,10 @@ phase that delivers it.
 - **[built]** Docker Compose publishes ports as `127.0.0.1:<port>` only. Containers must
   listen on `0.0.0.0` internally, so Compose sets the bypass flag; the localhost restriction
   is enforced by the port mapping.
-- **[planned — Phase 3/6]** `AUTH_TOKEN` enforcement on all API routes and the SSE stream
-  when configured (the guard above only ensures a token _exists_; request authentication
-  arrives with the first real API routes). Until then, do not expose the services beyond
-  localhost.
+- **[built]** `AUTH_TOKEN` is enforced on every `/api/*` route, including the event stream
+  and downloads (bearer header, or `?token=` where headers are impossible), with a
+  constant-time comparison. Health endpoints stay open. Covered by tests.
+- **[built]** API routes are rate-limited (600 requests per minute per client address).
 - **[planned — Phase 5]** The Stremio add-on URL carries its own unguessable token when the
   add-on is reachable from other devices.
 - **[planned — Phase 8]** Remote access guide: HTTPS reverse proxy in front, token required.
@@ -44,9 +44,9 @@ phase that delivers it.
 
 ## Input handling [planned — with the feature that accepts the input]
 
-- Upload size limit and `.srt`/text content validation (Phase 4/6).
-- Safe file paths: stored files are named by generated IDs/hashes, never by user-supplied
-  names; all paths are resolved and checked to stay inside the configured data directories.
+- **[built]** Upload size limit (`MAX_UPLOAD_BYTES`) and content validation: an upload that
+  does not parse as SRT is rejected before a job exists.
+- **[built]** Stored files are named only by generated job ids and validated language ids.
 - SSRF protection for remote subtitle downloads: HTTPS only, allow-listed hosts for
   configured sources, private/loopback/link-local address ranges rejected after DNS
   resolution, redirect and size limits (Phase 4).

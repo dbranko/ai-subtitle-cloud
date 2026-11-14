@@ -39,6 +39,18 @@ const envSchema = z.object({
   WORKER_HEALTH_HOST: z.string().default('127.0.0.1'),
   WORKER_HEALTH_PORT: port(7002),
   WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(250).default(5000),
+  WORKER_POLL_INTERVAL_MS: z.coerce.number().int().min(50).default(1000),
+  WORKER_LEASE_MS: z.coerce.number().int().min(500).default(30_000),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(1),
+  JOB_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
+  SEGMENT_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  MAX_UPLOAD_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1024)
+    .default(5 * 1024 * 1024),
+  MOCK_AI: bool(false),
+  MOCK_AI_DELAY_MS: z.coerce.number().int().min(0).default(1000),
 
   AUTH_TOKEN: optionalString,
 
@@ -88,7 +100,27 @@ export interface AppConfig {
   databaseUrl: string;
   api: { host: string; port: number };
   addon: { host: string; port: number };
-  worker: { healthHost: string; healthPort: number; heartbeatIntervalMs: number };
+  worker: {
+    healthHost: string;
+    healthPort: number;
+    heartbeatIntervalMs: number;
+    /** How often an idle worker looks for queued jobs. */
+    pollIntervalMs: number;
+    /** How long a job claim stays valid without renewal; a dead worker's jobs are recovered after this. */
+    leaseMs: number;
+    /** Jobs processed at the same time. */
+    concurrency: number;
+  };
+  jobs: {
+    /** Runs allowed per job (first run + automatic recoveries) before it fails as interrupted. */
+    maxAttempts: number;
+    /** Translator calls allowed per segment before the job fails. */
+    segmentMaxAttempts: number;
+    /** Largest accepted subtitle upload. */
+    maxUploadBytes: number;
+  };
+  /** Use the built-in mock translator instead of a real provider (no API calls, no cost). */
+  mockAi: { enabled: boolean; delayMs: number };
   ai: {
     /** API keys by provider. Server-side only: never log, never send to the browser or Stremio. */
     apiKeys: Partial<Record<AiProviderId, string>>;
@@ -168,7 +200,16 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       healthHost: e.WORKER_HEALTH_HOST,
       healthPort: e.WORKER_HEALTH_PORT,
       heartbeatIntervalMs: e.WORKER_HEARTBEAT_INTERVAL_MS,
+      pollIntervalMs: e.WORKER_POLL_INTERVAL_MS,
+      leaseMs: e.WORKER_LEASE_MS,
+      concurrency: e.WORKER_CONCURRENCY,
     },
+    jobs: {
+      maxAttempts: e.JOB_MAX_ATTEMPTS,
+      segmentMaxAttempts: e.SEGMENT_MAX_ATTEMPTS,
+      maxUploadBytes: e.MAX_UPLOAD_BYTES,
+    },
+    mockAi: { enabled: e.MOCK_AI, delayMs: e.MOCK_AI_DELAY_MS },
     ai: {
       apiKeys: definedOnly({
         anthropic: e.ANTHROPIC_API_KEY,
@@ -244,6 +285,8 @@ export function describeConfig(config: AppConfig): Record<string, unknown> {
     api: config.api,
     addon: config.addon,
     worker: config.worker,
+    jobs: config.jobs,
+    mockAi: config.mockAi,
     ai: {
       ...config.ai,
       // Keys are reduced to "configured: yes/no".

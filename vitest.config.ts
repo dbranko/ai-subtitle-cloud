@@ -15,6 +15,7 @@ export default defineConfig({
       '@asc/ai-providers': src('ai-providers'),
       '@asc/translation-engine': src('translation-engine'),
       '@asc/subtitle-sources': src('subtitle-sources'),
+      '@asc/jobs': src('jobs'),
     },
   },
   test: {

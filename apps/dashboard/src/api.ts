@@ -1,0 +1,189 @@
+// Types mirror the server's JobView / NotificationView / Snapshot (packages/jobs/src/view.ts).
+// They are repeated here so the browser bundle never imports server-side packages.
+
+export type JobState =
+  | 'queued'
+  | 'locating_source'
+  | 'downloading_source'
+  | 'parsing'
+  | 'preparing_context'
+  | 'translating'
+  | 'validating'
+  | 'saving'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface Job {
+  id: string;
+  state: JobState;
+  attempt: number;
+  mediaTitle: string;
+  sourceName: string | null;
+  sourceLanguage: string | null;
+  targetLanguage: string;
+  profile: string;
+  provider: string;
+  model: string;
+  usedModels: { provider: string; model: string }[];
+  percentage: number;
+  totalEntries: number;
+  completedEntries: number;
+  totalSegments: number;
+  completedSegments: number;
+  currentSegment: number | null;
+  etaSeconds: number | null;
+  statusDetail: string | null;
+  retryCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  error: { code: string; message: string; stage: string | null } | null;
+  cancelRequested: boolean;
+  hasOutput: boolean;
+  createdAt: string;
+  startedAt: string | null;
+  updatedAt: string;
+  completedAt: string | null;
+  elapsedSeconds: number | null;
+}
+
+export interface AppNotification {
+  id: string;
+  jobId: string;
+  kind: 'completed' | 'failed';
+  title: string;
+  message: string;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface Snapshot {
+  lastEventId: number;
+  serverTime: string;
+  jobs: Job[];
+  notifications: AppNotification[];
+}
+
+export interface Meta {
+  targetLanguages: { id: string; name: string; nativeName: string }[];
+  sourceLanguages: { id: string; name: string; nativeName: string }[];
+  profiles: { id: string; name: string; description: string }[];
+  providers: {
+    id: string;
+    name: string;
+    configured: boolean;
+    defaultModel: string;
+    suggestedModels: { id: string; note: string }[];
+    isPreferred: boolean;
+  }[];
+  defaults: { provider: string; model: string | null; profile: string };
+  mockAi: boolean;
+  maxUploadBytes: number;
+}
+
+export const ACTIVE_STATES: JobState[] = [
+  'queued',
+  'locating_source',
+  'downloading_source',
+  'parsing',
+  'preparing_context',
+  'translating',
+  'validating',
+  'saving',
+];
+export const isActive = (job: Job) => ACTIVE_STATES.includes(job.state);
+
+// --- Access token -------------------------------------------------------------
+// Only needed when the server has AUTH_TOKEN configured. It can be supplied once
+// in the address (…/?token=…); it is then kept in this browser and removed from the URL.
+const TOKEN_KEY = 'asc.token';
+
+export function initToken(): void {
+  const url = new URL(window.location.href);
+  const token = url.searchParams.get('token');
+  if (token) {
+    localStorage.setItem(TOKEN_KEY, token);
+    url.searchParams.delete('token');
+    window.history.replaceState(null, '', url.toString());
+  }
+}
+export const getToken = () => localStorage.getItem(TOKEN_KEY) ?? '';
+export const setToken = (token: string) => localStorage.setItem(TOKEN_KEY, token.trim());
+
+/** Append the token to a URL the browser requests itself (EventSource, download link). */
+export function withToken(path: string): string {
+  const token = getToken();
+  if (!token) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`;
+}
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const token = getToken();
+  const res = await fetch(path, {
+    method,
+    headers: {
+      accept: 'application/json',
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      data.error ?? 'error',
+      data.message ?? `Request failed (${res.status}).`,
+    );
+  }
+  return data as T;
+}
+
+export interface NewJob {
+  contentBase64: string;
+  fileName: string;
+  title?: string;
+  sourceLanguage?: string;
+  targetLanguage: string;
+  profile?: string;
+  customInstructions?: string;
+  provider?: string;
+  model?: string;
+  force?: boolean;
+}
+
+export const api = {
+  meta: () => request<Meta>('GET', '/api/v1/meta'),
+  createJob: (job: NewJob) =>
+    request<{ job: Job; created: boolean; reason: 'created' | 'active' | 'completed' }>(
+      'POST',
+      '/api/v1/jobs',
+      job,
+    ),
+  cancelJob: (id: string) => request<{ job: Job }>('POST', `/api/v1/jobs/${id}/cancel`),
+  retryJob: (id: string) => request<{ job: Job }>('POST', `/api/v1/jobs/${id}/retry`),
+  markRead: (id: string) => request<unknown>('POST', `/api/v1/notifications/${id}/read`),
+  markAllRead: () => request<unknown>('POST', '/api/v1/notifications/read-all'),
+};
+
+/** Read a file as base64 without assuming its text encoding (the server decodes it). */
+export async function fileToBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}

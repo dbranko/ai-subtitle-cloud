@@ -31,12 +31,12 @@ control: **the database is the contract**. The add-on and API create or look up 
 worker claims and processes them; everyone reads state from the same tables. This is what
 makes jobs independent of any HTTP request, browser tab or single process.
 
-| Process     | Responsibility                                                              | Status                                  |
-| ----------- | --------------------------------------------------------------------------- | --------------------------------------- |
-| `api`       | REST API, SSE progress stream, notifications, serves dashboard build        | health **[built]**, rest planned        |
-| `worker`    | Claims jobs, runs the translation pipeline, writes progress                 | heartbeat **[built]**, jobs Phase 3     |
-| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | health **[built]**, Stremio Phase 5     |
-| `dashboard` | React control panel                                                         | status page **[built]**, rest Phase 3/6 |
+| Process     | Responsibility                                                              | Status                                    |
+| ----------- | --------------------------------------------------------------------------- | ----------------------------------------- |
+| `api`       | REST API, SSE progress stream, notifications, serves dashboard build        | jobs API, SSE, auth **[built]**           |
+| `worker`    | Claims jobs, runs the translation pipeline, writes progress                 | job worker, heartbeat **[built]**         |
+| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | health **[built]**, Stremio Phase 5       |
+| `dashboard` | React control panel                                                         | progress screen **[built]**, rest Phase 6 |
 
 ## Why separate processes
 
@@ -55,6 +55,7 @@ makes jobs independent of any HTTP request, browser tab or single process.
 | `@asc/subtitle-parser`    | SRT decode / parse / serialize / validate                                                     | 1 **[built]** |
 | `@asc/translation-engine` | Languages, segmentation, prompt, response parsing, validation, orchestration, mock translator | 1 **[built]** |
 | `@asc/ai-providers`       | Claude / OpenAI / Gemini providers, manager (retry, fallback, cost), pricing, CLI             | 2 **[built]** |
+| `@asc/jobs`               | Job store, state machine, progress, locking, recovery, events, notifications, `JobWorker`     | 3 **[built]** |
 | `@asc/subtitle-sources`   | Local upload and OpenSubtitles adapters, matching                                             | 4             |
 
 Dependency direction: `apps → packages`; `translation-engine → subtitle-parser`;
@@ -80,13 +81,16 @@ it every `WORKER_HEARTBEAT_INTERVAL_MS`; the API reports the worker as alive whi
 is younger than three intervals. Phase 3 reuses `instanceId` for job locks and dead-worker
 detection.
 
-## Async job engine [planned — Phase 3]
+## Async job engine [built — Phase 3]
 
-Fully specified in [PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md). In short: persistent job rows
-with a legal state machine, a unique translation key that prevents duplicates, lease-based
-locking so only one worker processes a job, per-segment checkpoints for recovery after
-restart, weighted real progress, an event log that feeds SSE with resumable event IDs, and
-persistent notifications.
+Fully described in [PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md). In short: persistent job rows
+with a legal state machine, a unique active translation key that prevents duplicates,
+lease-based locking so only one worker processes a job, per-segment checkpoints for recovery
+after restart, weighted real progress, an event log that feeds SSE, and persistent
+notifications.
+
+Tables: `translation_jobs`, `job_segments` (checkpoints), `job_events` (event log),
+`notifications`, `service_heartbeats`.
 
 ## Stremio integration [planned — Phase 5]
 
@@ -126,5 +130,5 @@ in every process. See `.env.example` for every variable.
 
 Vitest runs unit and integration tests against real, fully migrated temporary SQLite
 databases (`createTestDatabase()` applies the committed migration files). AI providers are
-mocked in ordinary tests. Playwright end-to-end tests are added with the progress UI
-(Phase 3) and dashboard (Phase 6).
+mocked in ordinary tests. Playwright tests (`e2e/`) drive the dashboard in a real browser
+against real api and worker processes, which they start, kill and restart.

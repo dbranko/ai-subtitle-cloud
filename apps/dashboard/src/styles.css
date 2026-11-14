@@ -106,3 +106,277 @@ th {
 code {
   font-size: 0.9em;
 }
+
+/* ---- Phase 3: jobs, progress, notifications ---- */
+.page {
+  max-width: 920px;
+}
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+h2 {
+  margin-top: 28px;
+}
+.card h2 {
+  margin-top: 0;
+}
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.conn .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--degraded);
+}
+.conn-live .dot {
+  background: var(--ok);
+}
+.banner {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+input,
+select,
+textarea,
+button,
+.button {
+  font: inherit;
+}
+input:not([type='checkbox']),
+select,
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-weight: 400;
+}
+button,
+.button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.primary {
+  border-color: transparent;
+  background: #2f6fed;
+  color: #fff;
+}
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #2f6fed;
+  font-weight: 600;
+}
+@media (prefers-color-scheme: dark) {
+  .link {
+    color: #8ab4ff;
+  }
+}
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.job {
+  margin: 12px 0;
+  padding: 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.job-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.job-head > div {
+  min-width: 0;
+}
+.job h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  overflow-wrap: anywhere;
+}
+.job p {
+  margin: 4px 0 0;
+}
+.state {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--degraded);
+  background: var(--degraded-bg);
+}
+.state-completed {
+  color: var(--ok);
+  background: var(--ok-bg);
+}
+.state-failed {
+  color: var(--fail);
+  background: var(--fail-bg);
+}
+.state-cancelled,
+.state-queued {
+  color: var(--muted);
+  background: var(--bg);
+}
+.bar {
+  height: 10px;
+  margin: 14px 0 12px;
+  border-radius: 999px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #2f6fed;
+  transition: width 0.4s ease;
+}
+.job-completed .bar-fill {
+  background: var(--ok);
+}
+.job-failed .bar-fill,
+.job-cancelled .bar-fill {
+  background: var(--muted);
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+.facts dt {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.facts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.detail {
+  margin-top: 10px !important;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--degraded-bg);
+  color: var(--degraded);
+  font-size: 0.875rem;
+}
+.error {
+  margin-top: 10px !important;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--fail-bg);
+  color: var(--fail);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #2f6fed;
+  color: #fff;
+  font-size: 0.8rem;
+  text-align: center;
+  vertical-align: middle;
+}
+.notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.note {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.note p {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.note-completed strong {
+  color: var(--ok);
+}
+.note-failed strong {
+  color: var(--fail);
+}
+.prefs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.875rem;
+}

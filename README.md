@@ -6,10 +6,10 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phases 0–2 complete.** Foundation, SRT translation engine and AI providers
-> (Claude, OpenAI, Gemini with retry, fallback and cost estimates) exist, and subtitles can be
-> translated from the command line. The background job engine and progress system are next —
-> see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+> **Status: Phases 0–3 complete.** Subtitles are translated by a persistent background
+> worker with real, segment-level progress, live updates in the dashboard, cancellation,
+> recovery after a restart and completion notifications. Stremio integration comes after
+> subtitle sources and cache — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
 
@@ -49,6 +49,11 @@ pnpm dev
 
 On Windows PowerShell use `Copy-Item .env.example .env` instead of `cp`.
 
+### Try it without an AI key
+
+Put `MOCK_AI=true` in `.env`, run `pnpm dev`, open http://127.0.0.1:5173 and upload any
+`.srt` file. Everything runs for real except the AI provider, which is simulated at no cost.
+
 ## Quick start (Docker)
 
 ```bash
@@ -87,10 +92,12 @@ packages/
   database/            Prisma schema, migrations, SQLite client
   subtitle-parser/     SRT decode / parse / serialize / validate
   translation-engine/  Languages, segmentation, prompt, validation, translation orchestration
+  jobs/                Persistent jobs: states, progress, locking, recovery, events, worker
   ai-providers/        Claude, OpenAI, Gemini; retry, fallback, cost; `pnpm translate` CLI
   subtitle-sources/    (Phase 4) Local uploads, OpenSubtitles
 config/        pricing.json — per-model prices for cost estimates
 fixtures/      Representative subtitle files used by tests
+e2e/           Playwright browser tests
 data/          Runtime data: db/, subtitles/, cache/, logs/, jobs/ (git-ignored)
 docs/          Product spec, architecture, roadmap, progress system, security, API, changelog
 ```

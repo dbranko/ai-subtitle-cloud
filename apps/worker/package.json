@@ -10,6 +10,7 @@
   "dependencies": {
     "@asc/config": "workspace:*",
     "@asc/database": "workspace:*",
+    "@asc/jobs": "workspace:*",
     "@asc/shared": "workspace:*"
   }
 }

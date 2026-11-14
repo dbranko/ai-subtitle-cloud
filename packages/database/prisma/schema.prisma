@@ -24,3 +24,130 @@ model ServiceHeartbeat {
 
   @@map("service_heartbeats")
 }
+
+/// One translation request. The row is the single source of truth for the job:
+/// the worker, the API, the SSE stream and Stremio all read state from here.
+model TranslationJob {
+  id             String  @id
+  /// Identifies equivalent requests (source hash + target + profile + prompt/engine version).
+  translationKey String
+  /// Equals `translationKey` while the job is active, NULL once it is terminal.
+  /// The unique index therefore allows at most one ACTIVE job per translation key.
+  activeKey      String? @unique
+  state          String
+  /// "manual" (dashboard/API) or "stremio".
+  origin         String  @default("manual")
+  /// Run number: 1 for the first run, +1 for every recovery or owner retry.
+  attempt        Int     @default(1)
+
+  mediaTitle String
+  mediaType  String?
+  imdbId     String?
+  season     Int?
+  episode    Int?
+  sourceName String?
+
+  sourceLanguage     String?
+  targetLanguage     String
+  targetScript       String
+  profile            String
+  customInstructions String?
+  /// Preferred provider and model chosen when the job was created.
+  provider           String
+  model              String
+  /// JSON array of the provider/model pairs that actually produced the translation.
+  usedModels         String?
+
+  /// Path of the stored source subtitle, relative to the jobs directory.
+  sourceFile String
+  sourceHash String
+  /// File name of the finished translation, relative to the subtitles directory.
+  outputFile String?
+
+  percentage        Float   @default(0)
+  totalEntries      Int     @default(0)
+  completedEntries  Int     @default(0)
+  totalSegments     Int     @default(0)
+  completedSegments Int     @default(0)
+  /// 1-based number of the segment being translated right now.
+  currentSegment    Int?
+  etaSeconds        Int?
+  /// Short human-readable note about what is happening (e.g. a provider retry).
+  statusDetail      String?
+
+  retryCount   Int     @default(0)
+  inputTokens  Int     @default(0)
+  outputTokens Int     @default(0)
+  costUsd      Float   @default(0)
+  /// False when at least one request had no configured price (cost is then unknown).
+  costKnown    Boolean @default(true)
+
+  errorCode    String?
+  errorMessage String?
+  errorStage   String?
+
+  cancelRequested Boolean   @default(false)
+  /// Instance id of the worker processing the job, and when its claim expires.
+  lockedBy        String?
+  leaseExpiresAt  DateTime?
+
+  createdAt   DateTime
+  startedAt   DateTime?
+  updatedAt   DateTime
+  completedAt DateTime?
+
+  segments JobSegment[]
+
+  @@index([state, createdAt])
+  @@index([translationKey])
+  @@map("translation_jobs")
+}
+
+/// Checkpoint: one accepted (validated) segment of a job. Lets a job resume
+/// after a restart without translating finished segments again.
+model JobSegment {
+  jobId        String
+  segmentIndex Int
+  entries      Int
+  attempts     Int
+  durationMs   Int
+  /// JSON of the engine's SegmentResult.
+  result       String
+  createdAt    DateTime
+
+  job TranslationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, segmentIndex])
+  @@map("job_segments")
+}
+
+/// Append-only log of everything that changes. The auto-increment id is the
+/// SSE event id: clients resume from the last id they saw.
+model JobEvent {
+  id        Int      @id @default(autoincrement())
+  type      String
+  jobId     String?
+  /// JSON payload (the job or notification as the API returns it).
+  payload   String
+  createdAt DateTime
+
+  @@index([createdAt])
+  @@map("job_events")
+}
+
+/// Persistent completion/failure notification. The unique index guarantees one
+/// notification per outcome of each run, however often the write is attempted.
+model Notification {
+  id        String    @id
+  jobId     String
+  attempt   Int
+  kind      String
+  title     String
+  message   String
+  createdAt DateTime
+  readAt    DateTime?
+
+  @@unique([jobId, kind, attempt])
+  @@index([readAt, createdAt])
+  @@map("notifications")
+}

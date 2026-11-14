@@ -9,8 +9,8 @@ updated, no known critical error remains and a summary has been reported.
 | ----- | ---------------------------------------------------------------------- | ---------------------------- |
 | 0     | Project foundation                                                     | Done (approved)              |
 | 1     | SRT engine                                                             | Done (approved)              |
-| 2     | AI providers                                                           | **Done — awaiting approval** |
-| 3     | Persistent async job engine and progress system (**highest priority**) | Not started                  |
+| 2     | AI providers                                                           | Done (approved)              |
+| 3     | Persistent async job engine and progress system (**highest priority**) | **Done — awaiting approval** |
 | 4     | Subtitle sources and cache                                             | Not started                  |
 | 5     | Stremio add-on                                                         | Not started                  |
 | 6     | Dashboard and notifications                                            | Not started                  |
@@ -61,14 +61,27 @@ structural information. Details: [TRANSLATION_ENGINE.md](TRANSLATION_ENGINE.md).
 
 Details: [AI_PROVIDERS.md](AI_PROVIDERS.md).
 
-## Phase 3 — Persistent async job engine and progress system
+## Phase 3 — Persistent async job engine and progress system ✅
 
-Persistent jobs, lifecycle and legal transitions, background worker, locking, duplicate
-prevention, safe cancellation, restart recovery, segment-level and weighted progress,
-remaining-time estimates, SSE with reconnection, persistent notifications, failure/retry
-handling, minimal progress UI. Mandatory acceptance tests A–J
-([PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md)).
-**Stremio work must not begin until every mandatory test passes.**
+- [x] Persistent translation jobs (`translation_jobs`, `job_segments`).
+- [x] Job lifecycle with legal transitions; illegal ones are rejected.
+- [x] Background worker (`JobWorker`) in the worker process.
+- [x] Job locking with leases; a worker that lost its claim cannot write.
+- [x] Duplicate job prevention (unique active translation key).
+- [x] Safe cancellation with acknowledgement.
+- [x] Recovery after restart, resuming from the last accepted segment; explicit
+      `interrupted_by_restart` failure state.
+- [x] Segment-level progress and weighted overall progress.
+- [x] Remaining-time estimate from measured segments.
+- [x] SSE with snapshot on every connection and automatic reconnection.
+- [x] Persistent notifications (one per outcome), browser notifications, optional sound.
+- [x] Failure and retry handling on three levels, plus owner retry.
+- [x] Minimal progress monitoring interface in the dashboard.
+- [x] API authentication with `AUTH_TOKEN`, rate limiting.
+
+**Mandatory acceptance tests A–J: all pass** — at engine level (`packages/jobs`), over HTTP
+(`apps/api`) and in a real browser against real processes (`e2e`). See the table in
+[PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md).
 
 ## Phase 4 — Subtitle sources and cache
 

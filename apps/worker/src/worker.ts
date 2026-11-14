@@ -8,6 +8,7 @@ import {
   type Database,
   type HeartbeatIdentity,
 } from '@asc/database';
+import { createDefaultTranslatorFactory, JobWorker, type TranslatorFactory } from '@asc/jobs';
 import {
   APP_VERSION,
   buildLiveness,
@@ -20,21 +21,24 @@ export interface WorkerDeps {
   config: AppConfig;
   db: Database;
   logger: Logger;
+  /** Override how translators are built (tests). Default: configured providers, or the mock in mock mode. */
+  createTranslator?: TranslatorFactory;
 }
 
 export interface RunningWorker {
   identity: HeartbeatIdentity;
   /** Actual port of the health server (differs from config when 0 was requested). */
   healthPort: number;
+  jobs: JobWorker;
   stop: () => Promise<void>;
 }
 
 /**
- * Phase 0 worker: a persistent process that proves it is alive.
+ * The worker process: translation jobs, a heartbeat and a health endpoint.
  *
- * It writes a heartbeat row on a fixed interval (so the API can report worker
- * health and Phase 3 can detect dead workers) and exposes a tiny health server.
- * The translation job loop is added in Phase 3.
+ * The job loop (`JobWorker`) claims and processes jobs from the database. The
+ * heartbeat row lets the API report whether a worker is alive. The process
+ * instance id doubles as the owner id of job locks.
  */
 export async function startWorker(deps: WorkerDeps): Promise<RunningWorker> {
   const { config, db, logger } = deps;
@@ -90,12 +94,26 @@ export async function startWorker(deps: WorkerDeps): Promise<RunningWorker> {
   });
   await listen(server, config.worker.healthPort, config.worker.healthHost);
   const healthPort = (server.address() as AddressInfo).port;
-  logger.info({ instanceId: identity.instanceId, healthPort }, 'worker started');
+  const jobs = new JobWorker({
+    db,
+    config,
+    workerId: identity.instanceId,
+    createTranslator: deps.createTranslator ?? createDefaultTranslatorFactory(config),
+    logger,
+  });
+  jobs.start();
+  logger.info(
+    { instanceId: identity.instanceId, healthPort, mockAi: config.mockAi.enabled },
+    'worker started',
+  );
 
   return {
     identity,
     healthPort,
+    jobs,
     stop: async () => {
+      // Hand running jobs back to the queue first, while the database is still usable.
+      await jobs.stop();
       stopped = true;
       clearInterval(timer);
       await new Promise<void>((resolve) => server.close(() => resolve()));

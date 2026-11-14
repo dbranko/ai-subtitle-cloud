@@ -1,0 +1,276 @@
+import { timingSafeEqual } from 'node:crypto';
+import { createReadStream, existsSync } from 'node:fs';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { describeProviders } from '@asc/ai-providers';
+import { AI_PROVIDER_IDS, type AppConfig } from '@asc/config';
+import type { Database } from '@asc/database';
+import {
+  createJob,
+  JobConflictError,
+  JobNotFoundError,
+  JobRequestError,
+  listJobs,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  outputPath,
+  requestCancel,
+  requireJob,
+  retryJob,
+  toJobView,
+  toNotificationView,
+} from '@asc/jobs';
+import { decodeSubtitleBytes } from '@asc/subtitle-parser';
+import {
+  findLanguage,
+  listProfiles,
+  sourceLanguages,
+  targetLanguages,
+  TRANSLATION_PROFILES,
+} from '@asc/translation-engine';
+import type { EventHub } from './events.js';
+
+export interface ApiRouteDeps {
+  config: AppConfig;
+  db: Database;
+  events: EventHub;
+}
+
+const createJobSchema = z.object({
+  /** The subtitle file's bytes, base64-encoded (any encoding; decoded on the server). */
+  contentBase64: z.string().min(1).optional(),
+  /** Alternatively, the subtitle as already-decoded text. */
+  srt: z.string().min(1).optional(),
+  fileName: z.string().max(300).optional(),
+  title: z.string().max(300).optional(),
+  mediaType: z.enum(['movie', 'series']).optional(),
+  imdbId: z
+    .string()
+    .regex(/^tt\d{5,12}$/)
+    .optional(),
+  season: z.number().int().min(0).max(1000).optional(),
+  episode: z.number().int().min(0).max(100_000).optional(),
+  sourceLanguage: z.string().max(20).optional(),
+  targetLanguage: z.string().min(1).max(20),
+  profile: z.enum(TRANSLATION_PROFILES).optional(),
+  customInstructions: z.string().max(2000).optional(),
+  provider: z.enum(AI_PROVIDER_IDS).optional(),
+  model: z.string().max(100).optional(),
+  force: z.boolean().optional(),
+});
+
+function sameToken(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Token from `Authorization: Bearer …`, or `?token=…` (EventSource cannot set headers). */
+function presentedToken(req: FastifyRequest): string | undefined {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) return header.slice('Bearer '.length).trim();
+  const query = (req.query as Record<string, unknown> | undefined)?.token;
+  return typeof query === 'string' ? query : undefined;
+}
+
+export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): void {
+  const { config, db, events } = deps;
+
+  // --- Authentication -------------------------------------------------------
+  // Required for every /api route as soon as an AUTH_TOKEN is configured (which
+  // the bind guard demands before the API may listen beyond localhost).
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/')) return;
+    const expected = config.security.authToken;
+    if (expected === undefined) return;
+    const given = presentedToken(req);
+    if (given === undefined || !sameToken(given, expected)) {
+      await reply.code(401).send({ error: 'unauthorized', message: 'A valid token is required.' });
+    }
+  });
+
+  // --- Errors ---------------------------------------------------------------
+  app.setErrorHandler((err: unknown, req, reply) => {
+    if (err instanceof JobRequestError) {
+      return reply.code(400).send({ error: err.code, message: err.message });
+    }
+    if (err instanceof JobNotFoundError) {
+      return reply.code(404).send({ error: 'not_found', message: err.message });
+    }
+    if (err instanceof JobConflictError) {
+      return reply.code(409).send({ error: 'conflict', message: err.message });
+    }
+    if (err instanceof z.ZodError) {
+      const issue = err.issues[0];
+      const where = issue?.path.join('.') || 'request';
+      return reply
+        .code(400)
+        .send({ error: 'invalid_request', message: `${where}: ${issue?.message ?? 'invalid'}` });
+    }
+    const status = (err as { statusCode?: number }).statusCode;
+    if (typeof status === 'number' && status >= 400 && status < 500) {
+      const code = status === 413 ? 'too_large' : status === 429 ? 'rate_limited' : 'bad_request';
+      const message = err instanceof Error ? err.message : 'Bad request.';
+      return reply.code(status).send({ error: code, message });
+    }
+    req.log.error({ err }, 'unhandled API error');
+    return reply.code(500).send({ error: 'internal_error', message: 'Unexpected server error.' });
+  });
+
+  // --- Metadata for the UI --------------------------------------------------
+  app.get('/api/v1/meta', () => {
+    const language = (l: { id: string; name: string; nativeName: string }) => ({
+      id: l.id,
+      name: l.name,
+      nativeName: l.nativeName,
+    });
+    return {
+      targetLanguages: targetLanguages().map(language),
+      sourceLanguages: sourceLanguages().map(language),
+      profiles: listProfiles().map((p) => ({ id: p.id, name: p.name, description: p.description })),
+      providers: describeProviders(config),
+      defaults: {
+        provider: config.ai.provider,
+        model: config.ai.model ?? null,
+        profile: config.ai.translationProfile,
+      },
+      mockAi: config.mockAi.enabled,
+      maxUploadBytes: config.jobs.maxUploadBytes,
+    };
+  });
+
+  // --- Jobs -----------------------------------------------------------------
+  app.post(
+    '/api/v1/jobs',
+    // Base64 inflates the upload by a third; leave room for the other fields.
+    { bodyLimit: Math.ceil(config.jobs.maxUploadBytes * 1.4) + 16_384 },
+    async (req, reply) => {
+      const body = createJobSchema.parse(req.body);
+      let srt: string;
+      if (body.contentBase64 !== undefined) {
+        const bytes = Buffer.from(body.contentBase64, 'base64');
+        if (bytes.length === 0) {
+          throw new JobRequestError('source_invalid', 'The uploaded file is empty.');
+        }
+        if (bytes.length > config.jobs.maxUploadBytes) {
+          throw new JobRequestError(
+            'too_large',
+            `The subtitle is larger than the ${Math.round(config.jobs.maxUploadBytes / 1024)} KB limit.`,
+          );
+        }
+        const legacy = body.sourceLanguage
+          ? findLanguage(body.sourceLanguage)?.legacyEncoding
+          : undefined;
+        srt = decodeSubtitleBytes(bytes, legacy ?? 'windows-1252').text;
+      } else if (body.srt !== undefined) {
+        if (Buffer.byteLength(body.srt) > config.jobs.maxUploadBytes) {
+          throw new JobRequestError('too_large', 'The subtitle is too large.');
+        }
+        srt = body.srt;
+      } else {
+        throw new JobRequestError(
+          'source_invalid',
+          'Provide the subtitle as "contentBase64" or "srt".',
+        );
+      }
+
+      const result = await createJob(db, config, {
+        srt,
+        sourceName: body.fileName,
+        mediaTitle: body.title,
+        mediaType: body.mediaType,
+        imdbId: body.imdbId,
+        season: body.season,
+        episode: body.episode,
+        sourceLanguage: body.sourceLanguage,
+        targetLanguage: body.targetLanguage,
+        profile: body.profile,
+        customInstructions: body.customInstructions,
+        provider: body.provider,
+        model: body.model,
+        force: body.force,
+      });
+      return reply
+        .code(result.created ? 201 : 200)
+        .send({ job: toJobView(result.job), created: result.created, reason: result.reason });
+    },
+  );
+
+  app.get('/api/v1/jobs', async (req) => {
+    const query = z
+      .object({
+        scope: z.enum(['active', 'finished', 'all']).default('all'),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+      })
+      .parse(req.query);
+    const jobs = await listJobs(db, { scope: query.scope, limit: query.limit });
+    return { jobs: jobs.map(toJobView) };
+  });
+
+  const idParams = (req: FastifyRequest) =>
+    z.object({ id: z.string().min(1).max(64) }).parse(req.params);
+
+  app.get('/api/v1/jobs/:id', async (req) => ({
+    job: toJobView(await requireJob(db, idParams(req).id)),
+  }));
+
+  app.post('/api/v1/jobs/:id/cancel', async (req) => ({
+    job: toJobView(await requestCancel(db, idParams(req).id)),
+  }));
+
+  app.post('/api/v1/jobs/:id/retry', async (req) => ({
+    job: toJobView(await retryJob(db, idParams(req).id)),
+  }));
+
+  app.get('/api/v1/jobs/:id/download', async (req, reply: FastifyReply) => {
+    const job = await requireJob(db, idParams(req).id);
+    if (job.state !== 'completed' || !job.outputFile) {
+      throw new JobConflictError('The translation is not finished yet.');
+    }
+    const file = outputPath(config, job.outputFile);
+    if (!existsSync(file)) throw new JobNotFoundError(job.id);
+    const base = job.mediaTitle.replace(/[^\p{L}\p{N} ._()-]+/gu, ' ').trim() || 'subtitle';
+    const name = `${base}.${job.targetLanguage}.srt`;
+    return reply
+      .header('content-type', 'application/x-subrip; charset=utf-8')
+      .header(
+        'content-disposition',
+        `attachment; filename="subtitle.${job.targetLanguage}.srt"; filename*=UTF-8''${encodeURIComponent(name)}`,
+      )
+      .header('cache-control', 'private, no-store')
+      .send(createReadStream(file));
+  });
+
+  // --- Notifications --------------------------------------------------------
+  app.get('/api/v1/notifications', async (req) => {
+    const query = z
+      .object({
+        unread: z.enum(['true', 'false']).default('false'),
+        limit: z.coerce.number().int().min(1).max(200).default(50),
+      })
+      .parse(req.query);
+    const rows = await listNotifications(db, {
+      unreadOnly: query.unread === 'true',
+      limit: query.limit,
+    });
+    return { notifications: rows.map(toNotificationView) };
+  });
+
+  app.post('/api/v1/notifications/:id/read', async (req) => {
+    const row = await markNotificationRead(db, idParams(req).id);
+    if (!row) throw new JobNotFoundError(idParams(req).id);
+    return { notification: toNotificationView(row) };
+  });
+
+  app.post('/api/v1/notifications/read-all', async () => ({
+    marked: await markAllNotificationsRead(db),
+  }));
+
+  // --- Real-time updates (Server-Sent Events) -------------------------------
+  app.get('/api/v1/events', { config: { rateLimit: false } }, async (_req, reply) => {
+    // The stream is written directly; Fastify must not try to send a response itself.
+    reply.hijack();
+    await events.connect(reply.raw);
+  });
+}
