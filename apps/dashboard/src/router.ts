@@ -9,7 +9,13 @@ export function parseRoute(hash: string): Route {
   if (path === '/history') return { page: 'history' };
   if (path === '/settings') return { page: 'settings' };
   const job = /^\/jobs\/([^/?#]+)$/.exec(path);
-  if (job?.[1]) return { page: 'job', id: decodeURIComponent(job[1]) };
+  if (job?.[1]) {
+    try {
+      return { page: 'job', id: decodeURIComponent(job[1]) };
+    } catch {
+      return { page: 'job', id: job[1] }; // malformed escape: show "Job not found", do not crash
+    }
+  }
   return { page: 'overview' };
 }
 

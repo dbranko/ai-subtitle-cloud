@@ -5,6 +5,7 @@ import {
   ProviderConfigError,
   segmentationFromConfig,
   type AiProviderId,
+  type ManagerDeps,
   type ProviderEvent,
 } from '@asc/ai-providers';
 import { AI_PROVIDER_IDS, type AppConfig } from '@asc/config';
@@ -85,8 +86,13 @@ export type TranslatorFactory = (
   config: AppConfig,
 ) => SegmentTranslator;
 
-/** Production factory: the mock translator in mock mode, otherwise the configured providers. */
-export function createDefaultTranslatorFactory(): TranslatorFactory {
+/**
+ * Production factory: the mock translator in mock mode, otherwise the configured providers.
+ * `deps` is a test seam (an HTTP transport for the provider SDKs, a fake clock for retries).
+ */
+export function createDefaultTranslatorFactory(
+  deps: Pick<ManagerDeps, 'fetch' | 'sleep' | 'pricing'> = {},
+): TranslatorFactory {
   return (job, hooks, config) => {
     if (job.provider === MOCK_PROVIDER) {
       if (!config.mockAi.enabled) {
@@ -102,7 +108,7 @@ export function createDefaultTranslatorFactory(): TranslatorFactory {
     return createProviderManagerFromConfig(
       config,
       { provider: job.provider as AiProviderId, model: job.model },
-      { onEvent: hooks.onProviderEvent },
+      { ...deps, onEvent: hooks.onProviderEvent },
     ).translator;
   };
 }

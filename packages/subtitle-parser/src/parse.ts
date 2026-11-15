@@ -7,7 +7,8 @@ import {
   type SubtitleEntry,
 } from './types.js';
 
-const INDEX_LINE_RE = /^\s*\d+\s*$/;
+// At most 9 digits: a longer number is not an index (it would not survive as an integer).
+const INDEX_LINE_RE = /^\s*\d{1,9}\s*$/;
 
 /**
  * Parse SRT text.

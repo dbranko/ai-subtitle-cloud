@@ -23,6 +23,8 @@ export interface ApiDeps {
   sources?: SubtitleSource[];
   /** Dashboard settings provider (tests share one with the worker). */
   settings?: SettingsProvider;
+  /** Requests per minute per client on `/api/*` (default 600; tests that flood the API raise it). */
+  rateLimitPerMinute?: number;
 }
 
 /** Requests per minute allowed per client address on the API routes. */
@@ -42,7 +44,7 @@ export async function buildApp(deps: ApiDeps): Promise<FastifyInstance> {
   });
 
   await app.register(rateLimit, {
-    max: API_RATE_LIMIT,
+    max: deps.rateLimitPerMinute ?? API_RATE_LIMIT,
     timeWindow: '1 minute',
     // Health checks and static dashboard files are not limited.
     allowList: (req) => !req.url.startsWith('/api/'),

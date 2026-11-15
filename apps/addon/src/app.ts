@@ -57,6 +57,15 @@ export function tokenPrefix(config: AppConfig): string {
 }
 
 /** The address to paste into Stremio. */
+/** `decodeURIComponent` that never throws: a malformed escape simply does not match. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return '';
+  }
+}
+
 export function manifestUrl(config: AppConfig): string {
   return `${config.stremio.publicUrl}${tokenPrefix(config)}/manifest.json`;
 }
@@ -84,7 +93,7 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
       const url = req.url ?? '/';
       if (!token) return url;
       const match = /^\/([^/?]+)(\/.*|\?.*|$)/.exec(url);
-      if (match?.[1] && sameToken(decodeURIComponent(match[1]), token)) {
+      if (match?.[1] && sameToken(safeDecode(match[1]), token)) {
         req.ascAuthorized = true;
         return match[2] === '' || match[2]?.startsWith('?')
           ? `/${match[2] ?? ''}`

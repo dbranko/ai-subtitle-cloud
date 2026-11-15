@@ -12,6 +12,10 @@ export default defineConfig({
       '@asc/config': src('config'),
       '@asc/database': src('database'),
       '@asc/subtitle-parser': src('subtitle-parser'),
+      // Must precede '@asc/ai-providers' (prefix match).
+      '@asc/ai-providers/testing': fileURLToPath(
+        new URL('./packages/ai-providers/src/test-http.ts', import.meta.url),
+      ),
       '@asc/ai-providers': src('ai-providers'),
       '@asc/translation-engine': src('translation-engine'),
       '@asc/subtitle-sources': src('subtitle-sources'),

@@ -1,6 +1,7 @@
 import { setTimeout as sleepTimer } from 'node:timers/promises';
 import {
   createLlmTranslator,
+  TranslationResponseError,
   type LlmClient,
   type LlmRequest,
   type LlmResponse,
@@ -107,6 +108,9 @@ export interface ProviderManager extends LlmClient {
 const defaultSleep = async (ms: number, signal?: AbortSignal): Promise<void> => {
   await sleepTimer(ms, undefined, signal ? { signal } : {});
 };
+
+/** Failures of one answer (not of the provider): worth asking the same segment again. */
+const ANSWER_FAULTS: ReadonlySet<ProviderErrorKind> = new Set(['truncated', 'empty']);
 
 /**
  * One entry point for all AI calls.
@@ -269,11 +273,36 @@ export function createProviderManager(options: ProviderManagerOptions): Provider
     throw new AllProvidersFailedError(errors);
   }
 
-  const client: LlmClient = { complete };
+  /**
+   * For the translation engine, an answer that every provider cut off or left
+   * empty is a bad answer for this segment, not a broken provider: the engine
+   * asks for the segment again (bounded by its attempt limit) instead of
+   * failing the whole job on one oversized or empty reply.
+   */
+  const segmentClient: LlmClient = {
+    async complete(request) {
+      try {
+        return await complete(request);
+      } catch (err) {
+        if (
+          err instanceof AllProvidersFailedError &&
+          err.errors.every((e) => ANSWER_FAULTS.has(e.kind))
+        ) {
+          throw new TranslationResponseError(
+            err.last.kind === 'truncated'
+              ? 'The answer was cut off before it was complete.'
+              : 'The answer contained no text.',
+            { cause: err },
+          );
+        }
+        throw err;
+      }
+    },
+  };
   return {
     targets,
     complete,
-    translator: createLlmTranslator(client),
+    translator: createLlmTranslator(segmentClient),
     totals: () => ({ ...totals }),
   };
 }

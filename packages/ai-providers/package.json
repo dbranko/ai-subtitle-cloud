@@ -11,6 +11,11 @@
       "asc-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./testing": {
+      "asc-source": "./src/test-http.ts",
+      "types": "./dist/test-http.d.ts",
+      "default": "./dist/test-http.js"
     }
   },
   "dependencies": {
