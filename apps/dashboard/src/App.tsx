@@ -601,12 +601,7 @@ function StremioCard() {
       <h2>Stremio</h2>
       <p>
         Languages: <strong>{info.targetLanguages.join(', ') || 'none configured'}</strong> ·
-        translation starts{' '}
-        <strong>
-          {info.autoTranslate
-            ? 'automatically when a video is opened'
-            : 'when you pick “AI translate” in the subtitle menu'}
-        </strong>
+        translation starts only <strong>when you pick “AI translate” in the subtitle menu</strong>
         {info.dailyJobLimit > 0 && (
           <>
             {' '}

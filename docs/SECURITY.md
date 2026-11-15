@@ -61,7 +61,8 @@ phase that delivers it.
 - **[built]** The OpenSubtitles API key and password are sent only to the API host, never to
   the download host, the browser or logs.
 - Rate limiting: **[built]** on the API; not on the add-on (its handlers only read the
-  database, and automatic translations are capped by `STREMIO_DAILY_JOB_LIMIT`).
+  database; a translation starts only when an "AI translate" entry is picked, capped by
+  `STREMIO_DAILY_JOB_LIMIT`; HEAD requests cannot start one).
 - CORS: **[built]** the add-on allows any origin, as the Stremio protocol requires; the API
   sends no CORS headers, so only its own origin (the dashboard) can call it.
 

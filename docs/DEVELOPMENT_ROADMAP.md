@@ -113,7 +113,8 @@ translations and start background jobs for new ones. Details:
 - [x] Cache integration: finished translations are returned immediately.
 - [x] Status integration: jobs started by Stremio appear live in the dashboard; Stremio card
       with the install address; the add-on's Configure button opens the dashboard.
-- [x] Automatic and manual mode; daily limit for automatic translations.
+- [x] ~~Automatic and manual mode~~ → replaced at the owner's request: translation starts
+      only when "AI translate" is picked in Stremio's subtitle menu; daily limit.
 - [x] Access token in the add-on address when exposed beyond this computer.
 - [x] Test with actual Stremio Desktop: done by the owner on Stremio 6.0.7 (Windows). The
       add-on works through an HTTPS address; `http://127.0.0.1` is not accepted by that

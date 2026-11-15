@@ -51,8 +51,6 @@ async function start(env: Record<string, string> = {}): Promise<void> {
     env: {
       NODE_ENV: 'test',
       MOCK_AI: 'true',
-      // Most tests here exercise the opt-in automatic mode; the on-demand tests override it.
-      STREMIO_AUTO_TRANSLATE: 'true',
       WORKER_POLL_INTERVAL_MS: '50',
       WORKER_LEASE_MS: '500',
       ...env,
@@ -92,6 +90,16 @@ const subtitles = async (path: string) => {
   return { res, body: res.json<SubtitlesResponse>() };
 };
 const MOVIE = '/subtitles/movie/tt0111161.json';
+const isTranslateEntry = (s: { id: string }) => s.id.startsWith('asc-translate-');
+/** Finished subtitles in an answer (without the "AI translate" entries). */
+const ready = (body: SubtitlesResponse) => body.subtitles.filter((s) => !isTranslateEntry(s));
+/** What Stremio does when the viewer picks every "AI translate" entry: it loads its URL. */
+async function pick(path: string): Promise<void> {
+  for (const entry of (await subtitles(path)).body.subtitles.filter(isTranslateEntry)) {
+    const url = new URL(entry.url);
+    expect((await get(url.pathname + url.search)).statusCode).toBe(200);
+  }
+}
 /** Wait until every job that exists has finished. */
 async function allJobsDone(): Promise<void> {
   for (const job of await t.db.translationJob.findMany()) await waitForJob(t.db, job.id);
@@ -173,11 +181,11 @@ describe('manifest', () => {
 
     // The owner changes the languages in the dashboard: no restart, no reinstall in Stremio.
     await new SettingsProvider(t.db, config).update({
-      stremio: { targetLanguages: ['de'], autoTranslate: true },
+      stremio: { targetLanguages: ['de'] },
     });
     await sleep(2100); // settings are re-read within two seconds
     expect((await get('/')).body).toContain('<strong>German</strong>');
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     expect((await t.db.translationJob.findMany()).map((j) => j.targetLanguage)).toEqual(['de']);
   });
 });
@@ -237,17 +245,20 @@ describe('video ids and language codes', () => {
 });
 
 describe('subtitles handler — asynchronous behaviour', () => {
-  it('answers at once with no subtitle and starts a background job', async () => {
+  it('answers at once, starts nothing, and starts a background job only when the entry is picked', async () => {
     const started = Date.now();
     const { res, body } = await subtitles(MOVIE);
     expect(Date.now() - started).toBeLessThan(1000);
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('application/json; charset=utf-8');
-    // Nothing is ready: an honest empty list, not a placeholder or a status text.
-    expect(body).toEqual({ subtitles: [], cacheMaxAge: 0 });
+    // Nothing is ready: only the entry that lets the viewer ask for a translation.
+    expect(body.subtitles.map((s) => s.lang)).toEqual(['Serbian (Latin) · AI translate']);
     // …and the answer must not be cached, so the next request can see the result.
+    expect(body.cacheMaxAge).toBe(0);
     expect(res.headers['cache-control']).toBe('max-age=0, public');
+    expect(await t.db.translationJob.count()).toBe(0);
 
+    await pick(MOVIE);
     const jobs = await t.db.translationJob.findMany();
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({
@@ -263,24 +274,25 @@ describe('subtitles handler — asynchronous behaviour', () => {
 
   it('never blocks on a slow translation', async () => {
     startWorker(400); // each segment takes 400 ms
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     const job = (await t.db.translationJob.findFirstOrThrow()).id;
     await waitForJob(t.db, job, { until: (j) => j.state === 'translating' });
 
     const started = Date.now();
     const { body } = await subtitles(MOVIE);
     expect(Date.now() - started).toBeLessThan(300);
-    expect(body).toEqual({ subtitles: [], cacheMaxAge: 0 });
+    expect(ready(body)).toEqual([]);
+    expect(body.subtitles[0]?.lang).toMatch(/^Serbian \(Latin\) · AI \d+%$/);
   });
 
-  it('does not create a second job when Stremio asks again', async () => {
-    await Promise.all(Array.from({ length: 5 }, () => subtitles(MOVIE)));
-    await subtitles(MOVIE);
+  it('does not create a second job when the entry is picked again', async () => {
+    await Promise.all(Array.from({ length: 5 }, () => pick(MOVIE)));
+    await pick(MOVIE);
     expect(await t.db.translationJob.count()).toBe(1);
   });
 
   it('returns the finished translation on the next request', async () => {
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     startWorker();
     await allJobsDone();
 
@@ -303,7 +315,7 @@ describe('subtitles handler — asynchronous behaviour', () => {
   });
 
   it('passes the video hash, size and file name to the source search', async () => {
-    await subtitles(
+    await pick(
       '/subtitles/movie/tt0111161/videoHash=ABCDEF0123456789&videoSize=735234&filename=The.Movie.1994.1080p.BluRay.x264-GRP.mkv.json',
     );
     startWorker();
@@ -333,8 +345,7 @@ describe('subtitles handler — asynchronous behaviour', () => {
         episode: 5,
       },
     ];
-    const { body } = await subtitles('/subtitles/series/tt0903747:2:5.json');
-    expect(body.subtitles).toEqual([]);
+    await pick('/subtitles/series/tt0903747:2:5.json');
     startWorker();
     await allJobsDone();
     const job = await t.db.translationJob.findFirstOrThrow();
@@ -355,7 +366,8 @@ describe('subtitles handler — asynchronous behaviour', () => {
       1,
     );
     // Another episode is a different request.
-    expect((await subtitles('/subtitles/series/tt0903747:2:6.json')).body.subtitles).toEqual([]);
+    expect(ready((await subtitles('/subtitles/series/tt0903747:2:6.json')).body)).toEqual([]);
+    await pick('/subtitles/series/tt0903747:2:6.json');
     expect(await t.db.translationJob.count()).toBe(2);
   });
 
@@ -374,17 +386,22 @@ describe('subtitles handler — asynchronous behaviour', () => {
 
   it('reports a failed search as "no subtitles" and does not retry on every play', async () => {
     offers = [];
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     startWorker();
     await allJobsDone();
     expect((await t.db.translationJob.findFirstOrThrow()).errorCode).toBe('source_not_found');
-    for (let i = 0; i < 3; i++) expect((await subtitles(MOVIE)).body.subtitles).toEqual([]);
+    for (let i = 0; i < 3; i++) {
+      const { body } = await subtitles(MOVIE);
+      expect(ready(body)).toEqual([]);
+      expect(body.subtitles[0]?.lang).toBe('Serbian (Latin) · AI failed');
+      await pick(MOVIE);
+    }
     expect(await t.db.translationJob.count()).toBe(1);
     expect(searches).toHaveLength(1);
   });
 });
 
-describe('subtitles handler — languages and modes', () => {
+describe('subtitles handler — languages and limits', () => {
   it('offers every configured language and reports the answer complete only when all are ready', async () => {
     await app.close();
     await t.cleanup();
@@ -392,7 +409,7 @@ describe('subtitles handler — languages and modes', () => {
       STREMIO_TARGET_LANGUAGES: 'sr-Latn,sr-Cyrl,hr',
       STREMIO_LANGUAGE_LABELS: 'sr-Cyrl=Српски (ћирилица)',
     });
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     expect((await t.db.translationJob.findMany()).map((j) => j.targetLanguage).sort()).toEqual([
       'hr',
       'sr-Cyrl',
@@ -410,8 +427,8 @@ describe('subtitles handler — languages and modes', () => {
     expect(await t.db.sourceSubtitle.count()).toBe(1);
   });
 
-  it('returns the ready languages while another is still being translated', async () => {
-    await subtitles(MOVIE);
+  it('returns the ready languages and offers the others', async () => {
+    await pick(MOVIE);
     startWorker();
     await allJobsDone();
     await worker?.kill();
@@ -422,7 +439,6 @@ describe('subtitles handler — languages and modes', () => {
       env: {
         NODE_ENV: 'test',
         MOCK_AI: 'true',
-        STREMIO_AUTO_TRANSLATE: 'true',
         STREMIO_TARGET_LANGUAGES: 'sr-Latn,hr',
       },
       rootDir: config.rootDir,
@@ -430,9 +446,9 @@ describe('subtitles handler — languages and modes', () => {
     });
     app = await buildAddonApp({ config: both, db: t.db });
     const { body } = await subtitles(MOVIE);
-    expect(body.subtitles.map((s) => s.lang)).toEqual(['srp']);
-    expect(body.cacheMaxAge).toBe(0); // Croatian is on its way: do not cache this answer
-    expect(await t.db.translationJob.count({ where: { targetLanguage: 'hr' } })).toBe(1);
+    expect(body.subtitles.map((s) => s.lang)).toEqual(['srp', 'Croatian · AI translate']);
+    expect(body.cacheMaxAge).toBe(0); // Croatian may be picked: do not cache this answer
+    expect(await t.db.translationJob.count({ where: { targetLanguage: 'hr' } })).toBe(0);
   });
 
   it('stops starting translations when the daily limit is reached', async () => {
@@ -440,11 +456,11 @@ describe('subtitles handler — languages and modes', () => {
     await t.cleanup();
     await start({ STREMIO_DAILY_JOB_LIMIT: '2' });
     for (const id of ['tt0000001', 'tt0000002', 'tt0000003', 'tt0000004']) {
-      expect((await subtitles(`/subtitles/movie/${id}.json`)).res.statusCode).toBe(200);
+      await pick(`/subtitles/movie/${id}.json`);
     }
     expect(await t.db.translationJob.count()).toBe(2);
     // Titles that already have a job are still answered.
-    expect((await subtitles('/subtitles/movie/tt0000001.json')).body.subtitles).toEqual([]);
+    expect(ready((await subtitles('/subtitles/movie/tt0000001.json')).body)).toEqual([]);
     expect(await t.db.translationJob.count()).toBe(2);
   });
 
@@ -454,22 +470,23 @@ describe('subtitles handler — languages and modes', () => {
     await start({ MOCK_AI: 'false' });
     const { res, body } = await subtitles(MOVIE);
     expect(res.statusCode).toBe(200);
-    expect(body.subtitles).toEqual([]);
+    expect(ready(body)).toEqual([]);
+    await pick(MOVIE);
     expect(await t.db.translationJob.count()).toBe(0);
   });
 });
 
 describe('translated subtitle files', () => {
-  async function ready(): Promise<string> {
-    await subtitles(MOVIE);
+  async function finished(): Promise<string> {
+    await pick(MOVIE);
     startWorker();
     await allJobsDone();
-    const url = (await subtitles(MOVIE)).body.subtitles[0]!.url;
+    const url = ready((await subtitles(MOVIE)).body)[0]!.url;
     return new URL(url).pathname;
   }
 
   it('serves a real, valid SRT file with the headers a player needs', async () => {
-    const path = await ready();
+    const path = await finished();
     const res = await get(path, { origin: 'https://web.stremio.com' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('application/x-subrip; charset=utf-8');
@@ -484,7 +501,7 @@ describe('translated subtitle files', () => {
   });
 
   it('serves nothing but finished translations', async () => {
-    const path = await ready();
+    const path = await finished();
     const name = path.split('/').pop()!;
     for (const bad of [
       '/files/../../etc/passwd',
@@ -504,7 +521,7 @@ describe('translated subtitle files', () => {
   });
 
   it('stops offering a subtitle whose file is gone and prepares it again', async () => {
-    const path = await ready();
+    const path = await finished();
     await worker?.kill();
     worker = undefined;
     const job = await t.db.translationJob.findFirstOrThrow();
@@ -512,12 +529,14 @@ describe('translated subtitle files', () => {
 
     expect((await get(path)).statusCode).toBe(404);
     const { body } = await subtitles(MOVIE);
-    expect(body).toEqual({ subtitles: [], cacheMaxAge: 0 }); // never a link to a missing file
+    expect(ready(body)).toEqual([]); // never a link to a missing file
+    expect(body.cacheMaxAge).toBe(0);
+    await pick(MOVIE);
     expect(await t.db.translationJob.count()).toBe(2);
   });
 
   it('counts serving a file as using the cached translation', async () => {
-    const path = await ready();
+    const path = await finished();
     await t.db.translation.updateMany({ data: { lastUsedAt: new Date(0) } });
     await get(path);
     expect((await t.db.translation.findFirstOrThrow()).lastUsedAt.getTime()).toBeGreaterThan(
@@ -552,7 +571,7 @@ describe('owner pages', () => {
     });
     expect(manifestUrl(config)).toBe('https://subs.example.org/manifest.json');
     expect((await get('/')).body).toContain('stremio://subs.example.org/manifest.json');
-    await subtitles(MOVIE);
+    await pick(MOVIE);
     startWorker();
     await allJobsDone();
     expect((await subtitles(MOVIE)).body.subtitles[0]?.url).toMatch(
@@ -595,7 +614,7 @@ describe('access token', () => {
       `stremio://subs.example.org/${TOKEN}/manifest.json`,
     );
 
-    await subtitles(`/${TOKEN}${MOVIE}`);
+    await pick(`/${TOKEN}${MOVIE}`);
     startWorker();
     await allJobsDone();
     const url = (await subtitles(`/${TOKEN}${MOVIE}`)).body.subtitles[0]!.url;
@@ -609,7 +628,7 @@ describe('access token', () => {
 });
 
 describe('as a Stremio client sees it (real HTTP)', () => {
-  it('manifest → subtitles (empty) → subtitles (ready) → download', async () => {
+  it('manifest → subtitles (translate entry) → pick → subtitles (ready) → download', async () => {
     await app.close();
     await t.cleanup();
     await start();
@@ -624,7 +643,11 @@ describe('as a Stremio client sees it (real HTTP)', () => {
     const extra = `videoHash=abcdef0123456789&videoSize=1234&filename=${encodeURIComponent('Some Movie (1994) [1080p].mkv')}`;
     const path = `/subtitles/movie/tt0111161/${extra}.json`;
     const first = (await (await fetch(base + path)).json()) as SubtitlesResponse;
-    expect(first.subtitles).toEqual([]);
+    expect(first.subtitles).toHaveLength(1);
+    // The viewer picks "AI translate": Stremio loads the entry's URL, which starts the job.
+    const entry = new URL(first.subtitles[0]!.url);
+    const picked = await fetch(base + entry.pathname + entry.search);
+    expect(await picked.text()).toContain('AI prevod je pokrenut.');
 
     startWorker();
     await allJobsDone();
@@ -639,7 +662,7 @@ describe('as a Stremio client sees it (real HTTP)', () => {
   });
 });
 
-describe('on-demand translation (default mode)', () => {
+describe('translation only from the subtitle menu', () => {
   const translateUrl = (body: SubtitlesResponse) => {
     const entry = body.subtitles.find((s) => s.id.startsWith('asc-translate-'));
     if (!entry) throw new Error('no translate entry');
@@ -649,11 +672,10 @@ describe('on-demand translation (default mode)', () => {
   beforeEach(async () => {
     await app.close();
     await t.cleanup();
-    await start({ STREMIO_AUTO_TRANSLATE: '', ADDON_PUBLIC_URL: 'http://127.0.0.1:7000' });
+    await start({ ADDON_PUBLIC_URL: 'http://127.0.0.1:7000' });
   });
 
-  it('is the default and offers a translate entry without starting anything', async () => {
-    expect(config.stremio.autoTranslate).toBe(false);
+  it('offers a translate entry without starting anything', async () => {
     const { body } = await subtitles(
       '/subtitles/movie/tt0111161/videoHash=abcdef0123456789&filename=Movie.mkv.json',
     );
@@ -710,7 +732,7 @@ describe('on-demand translation (default mode)', () => {
   it('respects the daily limit when an entry is picked', async () => {
     await app.close();
     await t.cleanup();
-    await start({ STREMIO_AUTO_TRANSLATE: 'false', STREMIO_DAILY_JOB_LIMIT: '1' });
+    await start({ STREMIO_DAILY_JOB_LIMIT: '1' });
     expect((await get('/translate/sr-Latn/movie/tt0000001.srt')).body).toContain('pokrenut');
     const second = await get('/translate/sr-Latn/movie/tt0000002.srt');
     expect(second.body).toContain('dnevni limit AI prevoda (1)');
@@ -727,17 +749,26 @@ describe('on-demand translation (default mode)', () => {
   it('explains instead of failing when no AI provider is configured', async () => {
     await app.close();
     await t.cleanup();
-    await start({ STREMIO_AUTO_TRANSLATE: 'false', MOCK_AI: 'false' });
+    await start({ MOCK_AI: 'false' });
     const res = await get('/translate/sr-Latn/movie/tt0111161.srt');
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('AI prevod nije moguć');
     expect(await t.db.translationJob.count()).toBe(0);
   });
 
+  it('ignores the removed STREMIO_AUTO_TRANSLATE setting: opening a video never starts a job', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ STREMIO_AUTO_TRANSLATE: 'true' });
+    await subtitles(MOVIE);
+    await subtitles('/subtitles/series/tt0903747:1:1.json');
+    expect(await t.db.translationJob.count()).toBe(0);
+  });
+
   it('requires the access token like every other add-on path', async () => {
     await app.close();
     await t.cleanup();
-    await start({ STREMIO_AUTO_TRANSLATE: 'false', AUTH_TOKEN: 'secret-token-1234567890abcdef' });
+    await start({ AUTH_TOKEN: 'secret-token-1234567890abcdef' });
     expect((await get('/translate/sr-Latn/movie/tt0111161.srt')).statusCode).toBe(401);
     const { body } = await subtitles(`/secret-token-1234567890abcdef${MOVIE}`);
     expect(body.subtitles[0]?.url).toContain(

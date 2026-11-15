@@ -2,18 +2,18 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
-## Stremio: translation only on demand (owner request, 2026-11-15)
+## Stremio: translation only from the subtitle menu (owner request, 2026-11-15)
 
 ### Changed
 
-- **Default mode is now on demand** (`STREMIO_AUTO_TRANSLATE=false`). Opening a video starts
-  nothing. Stremio's subtitle menu offers `<language> · AI translate` for every language not
-  translated yet; picking it loads `/translate/<lang>/<type>/<id>.srt`, which starts the job
-  (subject to the daily limit) and returns a status message. While the job runs the entry
-  shows `· AI <n>%`; when it is finished the real subtitle replaces it.
-- Automatic mode remains as an explicit opt-in (`STREMIO_AUTO_TRANSLATE=true`). The old
-  manual mode (only existing translations, no entries) is replaced by on demand.
-- The daily limit applies to translations started from the menu as well.
+- Opening a video in Stremio **never** starts a translation. Stremio's subtitle menu offers
+  `<language> · AI translate` for every language not translated yet; picking it loads
+  `/translate/<lang>/<type>/<id>.srt`, which starts the job (subject to the daily limit) and
+  returns a status message. While the job runs the entry shows `· AI <n>%`; when it is
+  finished the real subtitle replaces it.
+- **Automatic mode is removed** (`STREMIO_AUTO_TRANSLATE` and the `autoTranslate` setting no
+  longer exist; a leftover value in `.env` or in saved settings is ignored). The old manual
+  mode is replaced by the menu entry as well.
 
 ### Decisions
 
@@ -25,7 +25,7 @@ Newest first. Each phase records what was added and the decisions made, with rea
    automatic subtitle choice can never select it.
 2. **Only GET starts a translation; HEAD is not routed**, so a probe cannot start a paid job.
 3. **The entry carries the video hash, size and file name** in its query string, so the job
-   ranks source subtitles exactly as an automatic request would.
+   ranks source subtitles as precisely as before.
 
 ## Phase 5 — Stremio add-on (2026-11-15)
 

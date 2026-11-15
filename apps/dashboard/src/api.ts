@@ -172,7 +172,6 @@ export interface StremioInfo {
   installUrl: string;
   reachable: 'this-computer' | 'https' | 'unsupported';
   targetLanguages: string[];
-  autoTranslate: boolean;
   dailyJobLimit: number;
   startedLast24h: number;
   sourceConfigured: boolean;

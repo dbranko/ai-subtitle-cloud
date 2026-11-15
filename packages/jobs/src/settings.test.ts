@@ -43,7 +43,6 @@ describe('settings — defaults', () => {
     expect(view.apiKeys.anthropic).toEqual({ configured: false, source: null, hint: null });
     expect(view.stremio).toMatchObject({
       targetLanguages: ['sr-Latn'],
-      autoTranslate: false,
       dailyJobLimit: 20,
     });
     expect(view.sources.languages).toEqual(['en']);
@@ -93,7 +92,6 @@ describe('settings — saving', () => {
       cache: { maxAgeDays: 90, maxSizeMb: 500 },
       stremio: {
         targetLanguages: ['sr-Latn', 'sr-Cyrl'],
-        autoTranslate: false,
         dailyJobLimit: 5,
         languageLabels: { 'sr-Cyrl': 'Српски' },
       },
@@ -131,7 +129,6 @@ describe('settings — saving', () => {
     expect(config.cache).toEqual({ maxAgeDays: 90, maxSizeMb: 500 });
     expect(config.stremio).toMatchObject({
       targetLanguages: ['sr-Latn', 'sr-Cyrl'],
-      autoTranslate: false,
       dailyJobLimit: 5,
       profile: 'cinematic', // follows the default profile unless set separately
       languageLabels: { 'sr-Cyrl': 'Српски' },

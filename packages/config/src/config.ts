@@ -52,7 +52,6 @@ const envSchema = z.object({
   ADDON_PUBLIC_URL: optionalString,
   DASHBOARD_PUBLIC_URL: optionalString,
   STREMIO_TARGET_LANGUAGES: z.string().default('sr-Latn'),
-  STREMIO_AUTO_TRANSLATE: bool(false),
   STREMIO_PROFILE: optionalString,
   STREMIO_DAILY_JOB_LIMIT: z.coerce.number().int().min(0).default(20),
   STREMIO_LANGUAGE_LABELS: z.string().default(''),
@@ -146,10 +145,8 @@ export interface AppConfig {
     dashboardUrl: string;
     /** Languages offered to Stremio, in order. */
     targetLanguages: string[];
-    /** Automatic mode: start a translation when Stremio asks for a title that has none. */
-    autoTranslate: boolean;
     profile: string;
-    /** Translations Stremio may start automatically per 24 hours (0 = unlimited). */
+    /** Translations the Stremio subtitle menu may start per 24 hours (0 = unlimited). */
     dailyJobLimit: number;
     /** Overrides for the `lang` value sent to Stremio, by target language id. */
     languageLabels: Record<string, string>;
@@ -271,7 +268,6 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       publicUrl: trimUrl(e.ADDON_PUBLIC_URL ?? `http://127.0.0.1:${e.ADDON_PORT}`),
       dashboardUrl: trimUrl(e.DASHBOARD_PUBLIC_URL ?? `http://127.0.0.1:${e.API_PORT}`),
       targetLanguages: splitList(e.STREMIO_TARGET_LANGUAGES),
-      autoTranslate: e.STREMIO_AUTO_TRANSLATE,
       profile: e.STREMIO_PROFILE ?? e.AI_TRANSLATION_PROFILE,
       dailyJobLimit: e.STREMIO_DAILY_JOB_LIMIT,
       languageLabels: Object.fromEntries(

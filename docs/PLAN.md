@@ -18,15 +18,15 @@ Stanje na dan 2026-11-15. Grana: `claude/intelligent-heisenberg-i96tw4`.
 
 ## Upravo urađeno (izvan plana, na zahtjev vlasnika)
 
-**Stremio prevod samo na zahtjev** (podrazumijevano, `STREMIO_AUTO_TRANSLATE=false`):
+**Stremio prevodi samo kad se odabere u meniju titlova** — automatski režim je uklonjen:
 
 - otvaranje videa ne pokreće ništa;
 - u meniju titlova stoji `<jezik> · AI translate`; tek odabir te stavke pokreće prevod;
 - dok prevod traje stavka glasi `<jezik> · AI 42%`; kad je gotov, zamjenjuje je pravi titl;
-- automatski režim ostaje samo kao izričito uključena opcija.
+- `STREMIO_AUTO_TRANSLATE` više ne postoji (ako je ostao u `.env`, ignoriše se).
 
 Čeka se: **provjera vlasnika u pravom Stremiu** da samo otvaranje filma ne pokreće posao
-(u `.env` postaviti `STREMIO_AUTO_TRANSLATE=false`, pa `docker compose up -d --build`).
+(`docker compose up -d --build`).
 
 ## Faza 6 — šta je gotovo
 
@@ -60,7 +60,7 @@ Već postojeće iz faze 3/5: živi napredak (SSE), obavijesti u pregledniku, ru�
    - API ključevi (samo upis, prikaz „…zadnja 4“, brisanje);
    - izvori: jezici izvora, OpenSubtitles nalog;
    - keš: starost i veličina, dugme za čišćenje;
-   - Stremio: jezici, režim (na zahtjev / automatski), dnevni limit, oznake jezika;
+   - Stremio: jezici, dnevni limit, oznake jezika;
    - podrazumijevani ciljni jezik i uputstva za stil.
 7. **Testovi**:
    - unit: vremenska linija, validacija podešavanja kroz API;
@@ -74,7 +74,6 @@ Već postojeće iz faze 3/5: živi napredak (SSE), obavijesti u pregledniku, ru�
 
 ## Otvorena pitanja / kasnije
 
-- Da li potpuno ukloniti automatski Stremio režim (sada samo opt-in)?
 - Serverski deploy (`docker-compose.server.yml` + `deploy/Caddyfile`) je commitan ali
   netestiran — pripada fazi 8; trenutno nema slobodnog Hetzner servera, koristi se
   cloudflared tunel.

@@ -1421,7 +1421,7 @@ export async function readSnapshot(db: Database, now = new Date()): Promise<Snap
   };
 }
 
-/** Jobs that a given origin started since `since` (used to cap automatic translations). */
+/** Jobs that a given origin started since `since` (used for the daily limit). */
 export async function countJobsSince(db: Database, origin: string, since: Date): Promise<number> {
   return db.translationJob.count({ where: { origin, createdAt: { gt: since } } });
 }

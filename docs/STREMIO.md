@@ -32,15 +32,26 @@ Consequences for this add-on:
 
 When Stremio asks for subtitles of a title, for each configured target language:
 
-| Situation                             | Answer for that language | Side effect                     |
-| ------------------------------------- | ------------------------ | ------------------------------- |
-| A finished translation exists (cache) | Subtitle entry           | none                            |
-| A job is queued or running            | nothing                  | none (the job is reused)        |
-| Nothing exists, automatic mode on     | nothing                  | a background job is created     |
-| Nothing exists, automatic mode off    | nothing                  | none                            |
-| A recent search found no source       | nothing                  | none for `SOURCE_RETRY_MINUTES` |
-| Daily limit of automatic jobs reached | nothing                  | none (logged)                   |
-| No AI provider configured             | nothing                  | none (logged)                   |
+Opening a video **never** starts a translation. The answer only reflects what exists:
+
+| Situation                             | Entry for that language        |
+| ------------------------------------- | ------------------------------ |
+| A finished translation exists (cache) | the subtitle (`srp`, `hrv`, …) |
+| A job is queued or running            | `<language> · AI 42%`          |
+| A recent attempt failed               | `<language> · AI failed`       |
+| Nothing exists                        | `<language> · AI translate`    |
+
+Picking an entry (Stremio loads its `/translate/...` URL) is the only thing that starts a
+translation:
+
+| Situation when picked           | What the player shows                        | Side effect                     |
+| ------------------------------- | -------------------------------------------- | ------------------------------- |
+| Nothing exists                  | "AI prevod je pokrenut…"                     | a background job starts         |
+| A job is queued or running      | "AI prevod u toku: 42% (još oko 3 min)"      | none (the job is reused)        |
+| Finished in the meantime        | the translation itself                       | none                            |
+| A recent search found no source | "AI prevod nije uspio: …"                    | none for `SOURCE_RETRY_MINUTES` |
+| Daily limit reached             | "Dostignut je dnevni limit AI prevoda (20)." | none                            |
+| No AI provider configured       | "AI prevod nije moguć: …"                    | none                            |
 
 The job finds a source subtitle (your uploads first, then OpenSubtitles), prefers an exact
 video-hash match, translates in the background, and stores the result. See
@@ -74,31 +85,29 @@ override it the same way if a language shows up as raw text.
 Other ids (non-IMDb catalogs) are answered with an empty list. Stremio does not send the
 title; the job takes it from the source subtitle's metadata once one is found.
 
-## Modes
+## Translation only from the subtitle menu
 
-**On demand** (`STREMIO_AUTO_TRANSLATE=false`, default): opening a video starts nothing.
 For every configured language that has no translation yet, Stremio's subtitle menu shows an
 entry labelled `<language> · AI translate`. Only when you pick that entry does Stremio load
-its URL (`/translate/...`), and that request starts the translation. What the player then
-shows is a short status message (in Serbian for Serbian/Croatian targets), repeated for ten
-seconds every minute: "AI prevod je pokrenut…". It is plainly a status, never presented as
-a translation. While the job runs the entry reads `<language> · AI 42%` and picking it again
-shows the current progress; it never starts a second job. When the translation is finished,
-reopen the video: the entry is replaced by the real subtitle (with its language code, e.g.
-`srp`). An old entry still loaded in the player then delivers the finished translation.
+its URL, and that request starts the translation. The player then shows a short status
+message (in Serbian for Serbian/Croatian targets), repeated for ten seconds every minute.
+It is plainly a status, never presented as a translation. While the job runs the entry
+reads `<language> · AI 42%`; picking it again shows the current progress and never starts a
+second job. When the translation is finished, reopen the video: the entry is replaced by the
+real subtitle. An old entry still loaded in the player then delivers the finished
+translation.
 
-The entry's label is deliberately not a language code, so Stremio's automatic choice of a
-subtitle in your preferred language never picks it — nothing is translated without your
-choice. Stremio loads a subtitle URL only when it is selected (observed behaviour of the
-Stremio player; HEAD requests to `/translate/...` are refused so a probe cannot start
-anything).
+There is no automatic mode (it was removed at the owner's request; a leftover
+`STREMIO_AUTO_TRANSLATE` in `.env` is ignored):
 
-**Automatic** (`STREMIO_AUTO_TRANSLATE=true`, opt-in): opening a title in Stremio starts a
-translation for every configured language that has none; no translate entries are shown.
+- opening a video only reads the database;
+- the entry's label is deliberately not a language code, so Stremio's automatic choice of a
+  subtitle in your preferred language never picks it;
+- Stremio loads a subtitle URL only when it is selected (observed behaviour of the Stremio
+  player); HEAD requests to `/translate/...` are refused, so a probe cannot start anything.
 
 > Every translation costs AI credits. `STREMIO_DAILY_JOB_LIMIT` (default 20 per 24 hours)
-> caps how many Stremio can start in either mode; use `MOCK_AI=true` to try the flow for
-> free.
+> caps how many the subtitle menu can start; use `MOCK_AI=true` to try the flow for free.
 
 Translations can also be started from the dashboard ("Translate by IMDb ID", or an uploaded
 SRT with the title's IMDb id); they appear in Stremio for that title.
@@ -134,7 +143,6 @@ With `AUTH_TOKEN` set, all but the health routes exist only under `/<token>/`.
 | Variable                   | Default                  | Meaning                                         |
 | -------------------------- | ------------------------ | ----------------------------------------------- |
 | `STREMIO_TARGET_LANGUAGES` | `sr-Latn`                | Languages offered, in order                     |
-| `STREMIO_AUTO_TRANSLATE`   | `false`                  | On demand (false) or automatic (true)           |
 | `STREMIO_DAILY_JOB_LIMIT`  | `20`                     | Translations Stremio may start per 24 h (0 = ∞) |
 | `STREMIO_PROFILE`          | `AI_TRANSLATION_PROFILE` | Translation profile for Stremio requests        |
 | `STREMIO_LANGUAGE_LABELS`  | —                        | `id=value` overrides of the `lang` sent         |

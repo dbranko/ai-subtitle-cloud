@@ -449,7 +449,6 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
           ? 'https'
           : 'unsupported',
       targetLanguages: stremio.targetLanguages.filter((id) => findLanguage(id)?.target === true),
-      autoTranslate: stremio.autoTranslate,
       profile: stremio.profile,
       dailyJobLimit: stremio.dailyJobLimit,
       startedLast24h: await countJobsSince(db, 'stremio', new Date(Date.now() - 24 * 60 * 60_000)),

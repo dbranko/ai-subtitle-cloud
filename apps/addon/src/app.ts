@@ -237,7 +237,7 @@ code{background:#eef0f3;padding:2px 6px;border-radius:4px;word-break:break-all}a
 <body>
 <h1>AI Subtitle Cloud</h1>
 <p>Stremio add-on. Translates subtitles into: <strong>${escapeHtml(languages.join(', ') || 'no language configured')}</strong>.</p>
-<p>Translation starts: <strong>${current.stremio.autoTranslate ? 'automatically when a video is opened' : 'when you pick “AI translate” in the subtitle menu'}</strong></p>
+<p>A translation starts only when you pick <strong>“AI translate”</strong> in Stremio's subtitle menu.</p>
 <p><a class="button" href="${escapeHtml(url.replace(/^https?:\/\//, 'stremio://'))}">Install in Stremio</a>
 <a class="button" href="${escapeHtml(config.stremio.dashboardUrl)}">Open dashboard (progress)</a></p>
 <p>Or paste this address into Stremio's add-on search box:<br><code>${escapeHtml(url)}</code></p>

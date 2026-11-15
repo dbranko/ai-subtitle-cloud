@@ -122,7 +122,6 @@ const storedSchema = z.object({
   stremio: z
     .object({
       targetLanguages: languageList,
-      autoTranslate: z.boolean(),
       dailyJobLimit: z.number().int().min(0).max(100_000),
       profile: z.enum(TRANSLATION_PROFILES),
       languageLabels: z.record(z.string().max(20), z.string().trim().min(1).max(60)),
@@ -246,7 +245,6 @@ export function applySettings(
     stremio: {
       ...base.stremio,
       targetLanguages: stremio.targetLanguages ?? base.stremio.targetLanguages,
-      autoTranslate: stremio.autoTranslate ?? base.stremio.autoTranslate,
       dailyJobLimit: stremio.dailyJobLimit ?? base.stremio.dailyJobLimit,
       // Without its own setting the add-on follows the general default profile.
       profile: stremio.profile ?? ai.translationProfile ?? base.stremio.profile,
@@ -291,7 +289,6 @@ export interface SettingsView {
   };
   stremio: {
     targetLanguages: string[];
-    autoTranslate: boolean;
     dailyJobLimit: number;
     profile: string;
     languageLabels: Record<string, string>;
@@ -394,7 +391,6 @@ export class SettingsProvider {
       },
       stremio: {
         targetLanguages: config.stremio.targetLanguages,
-        autoTranslate: config.stremio.autoTranslate,
         dailyJobLimit: config.stremio.dailyJobLimit,
         profile: config.stremio.profile,
         languageLabels: config.stremio.languageLabels,

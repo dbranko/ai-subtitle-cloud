@@ -12,7 +12,8 @@ Simplicity and maintainability win over generality.
 
 1. Automatically find a source subtitle for a movie or TV episode.
 2. Translate it with AI, preserving timing and structure exactly.
-3. Support automatic (from Stremio) and manual (from the dashboard) translation.
+3. Start translations from Stremio — only when the viewer picks "AI translate" in the
+   subtitle menu — and from the dashboard.
 4. Support several AI providers: Anthropic Claude, OpenAI, Google Gemini, with fallback.
 5. Run every translation asynchronously in a persistent background worker.
 6. Show accurate, real-time progress based on real completed work.
@@ -86,10 +87,13 @@ completed segments. This is designed, built and tested (Phase 3) before the Stre
 
 - Official Stremio Add-on SDK: manifest, movie and series subtitle handlers, correct language
   codes, stable subtitle IDs and URLs, hash/size matching where available, cache headers, CORS.
-- Automatic mode: detect media, find the best source (exact hash preferred), check cache,
-  reuse an active job, create a job only when needed, return finished translations.
-- Never blocks on translation, never returns something that is not a real subtitle, never
-  claims in-player progress features the protocol does not have. Actual client behaviour is
+- Translation only on the viewer's choice: opening a video starts nothing; each language not
+  yet translated is offered as "<language> · AI translate", and picking it starts a job that
+  finds the best source (exact hash preferred), checks the cache and reuses an active job.
+  Finished translations are returned as ordinary subtitles.
+- Never blocks on translation; the only non-subtitle content is the status message of a
+  picked "AI translate" entry, worded plainly as a status (owner decision, see CHANGELOG);
+  never claims in-player progress features the protocol does not have. Actual client behaviour is
   verified in Stremio Desktop.
 
 ### Dashboard

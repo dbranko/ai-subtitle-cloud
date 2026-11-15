@@ -236,16 +236,13 @@ const languageName = (id: string) => findLanguage(id)?.name ?? id;
 /**
  * The subtitles handler.
  *
- * It only reads and writes the database, so it answers in milliseconds.
- * For every configured language:
+ * It only reads the database — it never starts anything — so it answers in
+ * milliseconds. For every configured language:
  *  - a finished translation is returned as an ordinary subtitle entry;
- *  - otherwise, in the default on-demand mode, an entry labelled
- *    "<language> · AI translate" (or "· AI 42%" while it runs) is offered. Nothing
- *    is translated until the viewer picks that entry in Stremio's subtitle menu;
- *    its label is deliberately not a language code, so Stremio never selects it
- *    automatically;
- *  - in automatic mode (STREMIO_AUTO_TRANSLATE=true, opt-in) a background job
- *    is started straight away and nothing is returned for that language.
+ *  - otherwise an entry labelled "<language> · AI translate" (or "· AI 42%" while
+ *    it runs) is offered. A translation starts only when the viewer picks that
+ *    entry in Stremio's subtitle menu (see the /translate route); its label is
+ *    deliberately not a language code, so Stremio never selects it by itself.
  *
  * The Stremio protocol has no way to push progress or to announce that a
  * subtitle has become available. A translation that finishes later is picked
@@ -265,21 +262,14 @@ export function createSubtitlesHandler(deps: SubtitlesHandlerDeps) {
     const query = parseVideoId(args.type, args.id, args.extra ?? {});
     const targets = stremioTargets(config);
     if (!query || targets.length === 0) return { subtitles: [], cacheMaxAge: READY_CACHE_SECONDS };
-    const automatic = config.stremio.autoTranslate;
 
     const subtitles: StremioSubtitle[] = [];
     let ready = 0;
     for (const targetLanguage of targets) {
-      const outcome = await requestForStremio(db, config, query, targetLanguage, automatic);
-      if (outcome.kind === 'limit') {
-        logger?.warn(
-          { id: args.id, limit: outcome.limit },
-          'daily limit of automatic translations reached',
-        );
-      } else if (outcome.kind === 'unavailable') {
+      // Look only: opening a video never starts a translation.
+      const outcome = await requestForStremio(db, config, query, targetLanguage, false);
+      if (outcome.kind === 'unavailable') {
         logger?.warn({ id: args.id, targetLanguage }, outcome.message);
-      } else if (automatic && outcome.result.status === 'created') {
-        logger?.info({ id: args.id, targetLanguage }, 'translation requested by Stremio');
       }
       const result = outcome.kind === 'result' ? outcome.result : null;
 
@@ -292,9 +282,8 @@ export function createSubtitlesHandler(deps: SubtitlesHandlerDeps) {
         });
         continue;
       }
-      if (automatic) continue;
 
-      // On demand: offer an entry that starts (or reports on) the translation when picked.
+      // Offer an entry that starts (or reports on) the translation when picked.
       const name = languageName(targetLanguage);
       let label = `${name} · AI translate`;
       if (result?.status === 'active' && result.job) {
