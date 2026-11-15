@@ -1,0 +1,35 @@
+# Private server deployment: adds HTTPS in front of the application.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+#
+# Required in .env:
+#   ASC_DOMAIN        host name that points to this server (e.g. subs.example.org)
+#   AUTH_TOKEN        long random secret (at least 24 characters)
+#   ADDON_PUBLIC_URL  https://<ASC_DOMAIN>
+#   DASHBOARD_PUBLIC_URL  https://<ASC_DOMAIN>
+#
+# Only ports 80 and 443 are reachable from outside; the application's own ports
+# stay bound to 127.0.0.1 on the server.
+
+services:
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+      - addon
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Compose refuses to start without these, so the server can never run unprotected.
+      ASC_DOMAIN: ${ASC_DOMAIN:?Set ASC_DOMAIN in .env to the host name of this server}
+      AUTH_TOKEN: ${AUTH_TOKEN:?Set AUTH_TOKEN in .env to a long random secret}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,23 @@
+# Reverse proxy for a private server deployment (used by docker-compose.server.yml).
+#
+# One HTTPS host serves both parts of the application:
+#   https://<domain>/<AUTH_TOKEN>/...   → Stremio add-on (manifest, subtitles, files)
+#   https://<domain>/...                → dashboard and API (the API requires the token)
+#
+# Caddy obtains and renews the HTTPS certificate for {$ASC_DOMAIN} by itself.
+
+{$ASC_DOMAIN} {
+	encode gzip
+
+	# The add-on lives under the secret token path. Without the token nothing reaches it.
+	handle /{$AUTH_TOKEN}* {
+		reverse_proxy addon:7000
+	}
+
+	# Everything else is the dashboard and its API (live updates are streamed, not buffered).
+	handle {
+		reverse_proxy api:7001 {
+			flush_interval -1
+		}
+	}
+}
