@@ -380,3 +380,96 @@ button:disabled {
   gap: 6px;
   font-size: 0.875rem;
 }
+
+/* ---- Phase 6: navigation, overview, history, details, settings ---- */
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.nav a {
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav a:hover {
+  background: var(--border);
+}
+.nav a.current {
+  background: #2f6fed;
+  color: #fff;
+}
+.nav a .count {
+  margin-left: 6px;
+  background: var(--card);
+  color: var(--text);
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  align-items: flex-end;
+}
+.summary > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.count-failed {
+  background: var(--fail);
+}
+.inline {
+  font-size: 0.875rem;
+}
+.table-wrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  font-size: 0.9rem;
+}
+.table td {
+  vertical-align: top;
+}
+.pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.timeline,
+.activity {
+  margin: 0;
+  padding-left: 20px;
+}
+.timeline li,
+.activity li {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.tl-job-failed strong,
+.activity-failed strong {
+  color: var(--fail);
+}
+.tl-job-completed strong,
+.activity-completed strong {
+  color: var(--ok);
+}
+.form h3 {
+  margin: 20px 0 8px;
+  font-size: 1rem;
+}
+.row.tight {
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+.row.tight input {
+  flex: 1;
+  min-width: 0;
+}

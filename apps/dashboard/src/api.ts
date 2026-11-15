@@ -19,9 +19,14 @@ export interface Job {
   state: JobState;
   attempt: number;
   mediaTitle: string;
+  mediaType: string | null;
+  imdbId: string | null;
+  season: number | null;
+  episode: number | null;
   sourceName: string | null;
   sourceLanguage: string | null;
   targetLanguage: string;
+  targetScript: string;
   profile: string;
   origin: string;
   provider: string;
@@ -189,7 +194,120 @@ export interface NewMediaJob {
   profile?: string;
 }
 
+export interface SecretStatus {
+  configured: boolean;
+  source: 'settings' | 'environment' | null;
+  hint: string | null;
+}
+
+export type ProviderId = 'anthropic' | 'openai' | 'gemini';
+
+export interface Settings {
+  ai: {
+    provider: ProviderId;
+    model: string | null;
+    fallbackProvider: ProviderId | null;
+    fallbackModel: string | null;
+    effort: string;
+    temperature: number | null;
+    maxSegmentEntries: number;
+    translationProfile: string;
+  };
+  apiKeys: Record<ProviderId, SecretStatus>;
+  sources: {
+    languages: string[];
+    openSubtitles: { apiKey: SecretStatus; username: string | null; password: SecretStatus };
+  };
+  cache: {
+    maxAgeDays: number;
+    maxSizeMb: number;
+    cacheDirectory: string;
+    subtitlesDirectory: string;
+  };
+  stremio: {
+    targetLanguages: string[];
+    dailyJobLimit: number;
+    profile: string;
+    languageLabels: Record<string, string>;
+  };
+  defaults: { targetLanguage: string; customInstructions: string };
+  mockAi: boolean;
+}
+
+export type SecretName = ProviderId | 'opensubtitles' | 'opensubtitlesPassword';
+
+/** A change: only the parts that are sent are changed. A secret is set (string) or removed (null). */
+export interface SettingsPatch {
+  ai?: Partial<Settings['ai']>;
+  sources?: { languages?: string[]; openSubtitlesUsername?: string | null };
+  cache?: { maxAgeDays?: number; maxSizeMb?: number };
+  stremio?: Partial<Settings['stremio']>;
+  defaults?: Partial<Settings['defaults']>;
+  secrets?: Partial<Record<SecretName, string | null>>;
+}
+
+export interface TimelineEntry {
+  id: number;
+  at: string;
+  kind: string;
+  state: JobState | null;
+  attempt: number | null;
+  percentage: number | null;
+  detail: string | null;
+}
+
+export interface ActivityItem {
+  id: number;
+  type: string;
+  at: string;
+  jobId: string;
+  title: string;
+  targetLanguage: string;
+  origin: string;
+}
+
+export interface CacheInfo {
+  translations: number;
+  translationBytes: number;
+  sources: number;
+  sourceBytes: number;
+  oldestUse: string | null;
+  limits: { maxAgeDays: number; maxSizeMb: number };
+}
+
+export interface JobQuery {
+  scope?: 'active' | 'finished' | 'all';
+  status?: 'completed' | 'failed' | 'cancelled';
+  limit?: number;
+  offset?: number;
+}
+
 export const api = {
+  job: (id: string) => request<{ job: Job }>('GET', `/api/v1/jobs/${encodeURIComponent(id)}`),
+  jobs: (query: JobQuery) => {
+    const params = new URLSearchParams(
+      Object.entries(query)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, String(v)]),
+    );
+    return request<{ jobs: Job[]; total: number }>('GET', `/api/v1/jobs?${params.toString()}`);
+  },
+  timeline: (id: string) =>
+    request<{ entries: TimelineEntry[]; truncated: boolean }>(
+      'GET',
+      `/api/v1/jobs/${encodeURIComponent(id)}/events`,
+    ),
+  activity: (limit = 15) =>
+    request<{ activity: ActivityItem[] }>('GET', `/api/v1/activity?limit=${limit}`),
+  settings: () => request<Settings>('GET', '/api/v1/settings'),
+  saveSettings: (patch: SettingsPatch) => request<Settings>('PUT', '/api/v1/settings', patch),
+  cache: () => request<CacheInfo>('GET', '/api/v1/cache'),
+  cleanupCache: () =>
+    request<{ translationsRemoved: number; sourcesRemoved: number; bytesFreed: number }>(
+      'POST',
+      '/api/v1/cache/cleanup',
+      {},
+    ),
   stremio: () => request<StremioInfo>('GET', '/api/v1/stremio'),
   createMediaJob: (job: NewMediaJob) =>
     request<{ status: 'cached' | 'active' | 'created' | 'failed'; job: Job | null }>(
