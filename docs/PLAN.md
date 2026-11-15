@@ -12,11 +12,11 @@ Stanje na dan 2026-11-15. Grana: `claude/intelligent-heisenberg-i96tw4`.
 | 3    | Asinhroni job engine, napredak, SSE, obavijesti | Završeno, odobreno                                 |
 | 4    | Izvori titlova (OpenSubtitles), keš             | Završeno, odobreno (živi test)                     |
 | 5    | Stremio add-on                                  | Završeno, provjereno u Stremiu 6.0.7 (HTTPS tunel) |
-| 6    | Dashboard i obavijesti                          | **U toku**                                         |
+| 6    | Dashboard i obavijesti                          | **Završeno — čeka odobrenje**                      |
 | 7    | Sigurnost, robusnost, testovi                   | Nije počelo                                        |
 | 8    | Deploy i dokumentacija                          | Nije počelo                                        |
 
-## Upravo urađeno (izvan plana, na zahtjev vlasnika)
+## Urađeno izvan plana, na zahtjev vlasnika
 
 **Stremio prevodi samo kad se odabere u meniju titlova** — automatski režim je uklonjen:
 
@@ -25,52 +25,35 @@ Stanje na dan 2026-11-15. Grana: `claude/intelligent-heisenberg-i96tw4`.
 - dok prevod traje stavka glasi `<jezik> · AI 42%`; kad je gotov, zamjenjuje je pravi titl;
 - `STREMIO_AUTO_TRANSLATE` više ne postoji (ako je ostao u `.env`, ignoriše se).
 
-Čeka se: **provjera vlasnika u pravom Stremiu** da samo otvaranje filma ne pokreće posao
-(`docker compose up -d --build`).
+Čeka se: **provjera vlasnika u pravom Stremiu** (`docker compose up -d --build`).
 
-## Faza 6 — šta je gotovo
+**Formatting tagovi više ne obaraju segment** (poruka „answer rejected … formatting tags must
+be copied exactly“):
 
-Backend (commitano i pushano, svi testovi prolaze):
+- tagovi se porede bez obzira na velika/mala slova, navodnike i razmake;
+- tagovi koji obuhvataju cijeli titl ili cijele redove (`<i>…</i>`, `{\an8}`) vraćaju se iz
+  originala automatski, bez novog AI poziva;
+- ako ni u zadnjem pokušaju AI ne prenese tagove usred rečenice, titl se zadržava bez tih
+  tagova (uz upozorenje `markup_simplified`) umjesto da cijeli posao padne.
 
-- podešavanja u bazi (`settings`), primjenjuju se bez restarta u workeru, API-ju i add-onu;
-- API ključevi šifrovani AES-256-GCM, ključ u `<data>/secret.key` (0600); API nikad ne vraća
-  ključ, samo „podešen / izvor / zadnja 4 znaka“;
-- `GET/PUT /api/v1/settings`, `GET /api/v1/activity`, `GET /api/v1/jobs` sa filterom i
-  stranicama (`scope`, `status`, `limit`, `offset`, `total`);
-- indeks `job_events(jobId, id)` za vremensku liniju posla.
+## Faza 6 — urađeno
 
-Već postojeće iz faze 3/5: živi napredak (SSE), obavijesti u pregledniku, ručni prevod
-(upload SRT i po IMDb ID-u), Stremio kartica, preuzimanje SRT-a.
+- podešavanja u bazi, primjenjuju se bez restarta; API ključevi šifrovani (AES-256-GCM) i
+  nikad se ne vraćaju pregledniku;
+- API: podešavanja, aktivnost, poslovi sa filterom i stranicama, vremenska linija posla
+  (`GET /api/v1/jobs/:id/events`);
+- dashboard: Pregled · Historija · Podešavanja · Detalji posla (`#/jobs/<id>`);
+- pregled: AI provajder/model/rezervni/ključ, forme za prevod, aktivni poslovi uživo,
+  obavijesti, Stremio, nedavni (sa brojem neuspjelih), nedavna aktivnost;
+- detalji: sve činjenice, živi napredak, otkaži/ponovi/preuzmi, vremenska linija;
+- historija: filter (svi/završeni/neuspjeli/otkazani), stranice po 20, preuzimanje;
+- podešavanja: AI, ključevi (samo upis), izvori, Stremio, podrazumijevano, keš + čišćenje;
+- testovi: unit (vremenska linija, validacija podešavanja) i Playwright (tri posla, dva
+  paralelno; podešavanja bez curenja ključa; historija; detalji).
 
-## Faza 6 — šta preostaje
+## Sljedeće
 
-1. **API**: `GET /api/v1/jobs/:id/events` — vremenska linija posla (promjene stanja, bez
-   ponavljanja svakog segmenta).
-2. **Navigacija u dashboardu**: Pregled · Historija · Podešavanja · Detalji posla
-   (`#/jobs/<id>`); postojeći elementi i `data-testid` ostaju.
-3. **Pregled (glavna strana)**: aktivni poslovi uživo, nedavno završeni, neuspjeli,
-   trenutni AI provajder i model, nedavna aktivnost.
-4. **Detalji posla**: sve činjenice o poslu (izvor, jezici, modeli, tokeni, trošak, vremena,
-   greška), vremenska linija, otkaži / ponovi / preuzmi.
-5. **Historija**: tabela s filterom (završeni / neuspjeli / otkazani), stranice, linkovi za
-   preuzimanje i detalje.
-6. **Podešavanja**:
-   - AI: provajder, model, rezervni provajder i model, effort, temperatura, veličina
-     segmenta, profil;
-   - API ključevi (samo upis, prikaz „…zadnja 4“, brisanje);
-   - izvori: jezici izvora, OpenSubtitles nalog;
-   - keš: starost i veličina, dugme za čišćenje;
-   - Stremio: jezici, dnevni limit, oznake jezika;
-   - podrazumijevani ciljni jezik i uputstva za stil.
-7. **Testovi**:
-   - unit: vremenska linija, validacija podešavanja kroz API;
-   - Playwright: više aktivnih poslova istovremeno, čuvanje podešavanja (i da ključ nikad
-     ne stigne u preglednik), historija s filterom i stranicama, detalji posla;
-   - postojeći testovi za SSE reconnect i refresh preglednika ostaju zeleni.
-8. **Dokumentacija**: README, DEVELOPMENT_ROADMAP, ARCHITECTURE, API, SECURITY
-   (šifrovanje ključeva), CHANGELOG.
-9. `pnpm check` + `pnpm test:e2e`, commit, push, izvještaj — pa **stop i čekanje odobrenja
-   za fazu 7**.
+- **Odobrenje faze 6**, pa faza 7 (sigurnost, robusnost, integracijski testovi).
 
 ## Otvorena pitanja / kasnije
 

@@ -124,11 +124,27 @@ No native progress capability was invented: the protocol has none, so the dashbo
 progress page. How the Stremio client picks up a subtitle that finishes later is the main
 point the Desktop test has to confirm.
 
-## Phase 6 — Dashboard and notifications
+## Phase 6 — Dashboard and notifications **[done — awaiting approval]**
 
 Dashboard, manual translation page, job details, live progress, browser notifications,
 settings, history, downloads. Tests: SSE reconnection, browser refresh, multiple active jobs.
 **Deliverable:** complete private control panel.
+
+- [x] Navigation: Overview `#/`, History `#/history`, Settings `#/settings`, job details
+      `#/jobs/<id>` (direct links and reloads work).
+- [x] Overview: current AI provider/model/fallback/key status, both translation forms, active
+      jobs live, notifications, Stremio card, recent jobs with a failed count, activity list.
+- [x] Job details: every fact (media, source, languages, profile, models, tokens, cost,
+      times, error), live progress, cancel / retry / download, timeline
+      (`GET /api/v1/jobs/:id/events`).
+- [x] History: filter (all / completed / failed / cancelled), pages of 20, download links.
+- [x] Settings: AI (provider, model, fallback, effort, temperature, subtitles per request,
+      profile, default language, style instructions), write-only API keys (encrypted),
+      sources, Stremio (languages, daily limit, profile, labels), cache limits and cleanup.
+- [x] Tests: timeline and settings validation through the API; Playwright: three jobs with
+      two running in parallel, settings saved without the key ever reaching the browser,
+      history filter and pages, job details with timeline; earlier SSE reconnect and refresh
+      tests still green.
 
 ## Phase 7 — Full integration and reliability
 

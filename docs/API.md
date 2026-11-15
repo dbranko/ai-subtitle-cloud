@@ -95,8 +95,18 @@ Response (`201` when a job was created, otherwise `200`):
 
 ### Read
 
-- `GET /api/v1/jobs?scope=active|finished|all&limit=50` → `{ "jobs": [JobView] }`
+- `GET /api/v1/jobs?scope=active|finished|all&status=completed|failed|cancelled&limit=50&offset=0`
+  → `{ "jobs": [JobView], "total": 123 }` — finished jobs newest first; `status` filters the
+  history, `limit` (≤ 200) and `offset` page through it.
 - `GET /api/v1/jobs/:id` → `{ "job": JobView }`
+- `GET /api/v1/jobs/:id/events` → `{ "entries": [TimelineEntry], "truncated": false }` — what
+  happened to the job, in order: `job.created`, every state change (`job.state`), every new
+  status detail such as a rejected AI answer (`job.detail`), `job.completed` / `job.failed`
+  (with the error message) / `job.cancelled`, and `notification`. Plain progress updates are
+  folded away. `truncated` is true when the bounded event log no longer has the job's first
+  events. Entry: `{ id, at, kind, state, attempt, percentage, detail }`.
+- `GET /api/v1/activity?limit=20` → `{ "activity": [{ id, type, at, jobId, title,
+targetLanguage, origin }] }` — jobs started, completed, failed or cancelled, newest first.
 
 ### Actions
 
@@ -179,6 +189,20 @@ failing the search. Pass a candidate as `source` to `POST /api/v1/jobs/from-medi
 - `POST /api/v1/cache/cleanup` — run cleanup now; optional `{ "maxAgeDays": 30, "maxSizeMb": 500 }`
   overrides the configured limits for this run. Returns what was removed.
 
+## Settings
+
+- `GET /api/v1/settings` — the effective settings: `ai` (provider, model, fallback, effort,
+  temperature, subtitles per request, profile), `apiKeys` and `sources.openSubtitles`
+  (`{ configured, source: "settings"|"environment"|null, hint: "…abcd"|null }` — **never the
+  key**), `sources.languages`, `cache` limits and directories, `stremio` (languages, daily
+  limit, profile, language labels), `defaults` (target language, style instructions), `mockAi`.
+- `PUT /api/v1/settings` — any subset of `ai`, `sources` (`languages`,
+  `openSubtitlesUsername`), `cache`, `stremio`, `defaults`, plus `secrets`
+  (`anthropic`, `openai`, `gemini`, `opensubtitles`, `opensubtitlesPassword`: a string sets
+  the key, `null` removes the saved one). Returns the new view. Invalid values → `400
+invalid_settings` with a readable reason, and nothing is saved. Saved values override the
+  environment and apply to the worker, the API and the add-on without a restart.
+
 ## Notifications
 
 - `GET /api/v1/notifications?unread=true|false&limit=50`
@@ -241,8 +265,7 @@ What the dashboard shows about the add-on: `manifestUrl`, `installUrl` (`stremio
 
 The add-on's own routes (port 7000) are described in [STREMIO.md](STREMIO.md).
 
-## Planned
+## Dashboard routes
 
-| Area     | Endpoints (outline)                                   | Phase |
-| -------- | ----------------------------------------------------- | ----- |
-| Settings | `GET /settings`, `PUT /settings` (secrets write-only) | 6     |
+The dashboard is a single page with hash routes: `#/` overview, `#/history`, `#/settings`,
+`#/jobs/<id>` job details. Direct links and reloads work.

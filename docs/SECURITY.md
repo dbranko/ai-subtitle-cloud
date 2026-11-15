@@ -42,8 +42,12 @@ phase that delivers it.
   key-free, and provider endpoints are fixed in code so an inherited `*_BASE_URL` variable
   cannot redirect a key. Covered by tests.
 - **[built]** OpenAI requests use `store: false`, so subtitles are not retained there.
-- **[planned — Phase 6]** Editing keys from the dashboard: write-only fields, stored outside
-  the browser, never returned by any API response.
+- **[built]** Editing keys from the dashboard: write-only password fields that are empty
+  after saving; keys are stored in the database encrypted with AES-256-GCM, with the key in
+  `<data>/secret.key` (created with mode 0600, never committed, keep it with backups). No API
+  response contains a key — only "set / where from / last 4 characters" (for keys of 12+
+  characters). A Playwright test records every response the browser receives and checks the
+  key never appears.
 - **[planned — Phase 8]** CI/repository check that no secret is committed.
 
 ## Input handling [planned — with the feature that accepts the input]

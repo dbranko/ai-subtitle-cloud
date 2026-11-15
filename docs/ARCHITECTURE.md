@@ -31,12 +31,12 @@ control: **the database is the contract**. The add-on and API create or look up 
 worker claims and processes them; everyone reads state from the same tables. This is what
 makes jobs independent of any HTTP request, browser tab or single process.
 
-| Process     | Responsibility                                                              | Status                                    |
-| ----------- | --------------------------------------------------------------------------- | ----------------------------------------- |
-| `api`       | REST API, SSE progress stream, notifications, serves dashboard build        | jobs API, SSE, auth **[built]**           |
-| `worker`    | Claims jobs, runs the translation pipeline, writes progress                 | job worker, heartbeat **[built]**         |
-| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | Stremio add-on **[built]**                |
-| `dashboard` | React control panel                                                         | progress screen **[built]**, rest Phase 6 |
+| Process     | Responsibility                                                              | Status                                           |
+| ----------- | --------------------------------------------------------------------------- | ------------------------------------------------ |
+| `api`       | REST API, SSE progress stream, notifications, serves dashboard build        | jobs API, SSE, auth **[built]**                  |
+| `worker`    | Claims jobs, runs the translation pipeline, writes progress                 | job worker, heartbeat **[built]**                |
+| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | Stremio add-on **[built]**                       |
+| `dashboard` | React control panel                                                         | overview, history, details, settings **[built]** |
 
 ## Why separate processes
 

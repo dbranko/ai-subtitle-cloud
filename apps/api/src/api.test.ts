@@ -329,6 +329,58 @@ describe('GET /api/v1/jobs/:id/events (timeline)', () => {
   });
 });
 
+describe('settings API', () => {
+  const put = (payload: unknown) =>
+    app.inject({ method: 'PUT', url: '/api/v1/settings', payload: payload as object });
+
+  it('saves settings, applies them and never returns a key', async () => {
+    const key = 'sk-test-api-settings-0123456789abcd';
+    const res = await put({
+      ai: { provider: 'openai', model: 'gpt-test', maxSegmentEntries: 40 },
+      stremio: { targetLanguages: ['hr'], dailyJobLimit: 7 },
+      secrets: { openai: key },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain(key);
+    const view = (await get('/api/v1/settings')).json<{
+      ai: { provider: string; model: string; maxSegmentEntries: number };
+      apiKeys: { openai: { configured: boolean; source: string; hint: string } };
+    }>();
+    expect(view.ai).toMatchObject({ provider: 'openai', model: 'gpt-test', maxSegmentEntries: 40 });
+    expect(view.apiKeys.openai).toEqual({ configured: true, source: 'settings', hint: '…abcd' });
+    const stremio = (await get('/api/v1/stremio')).json<{
+      targetLanguages: string[];
+      dailyJobLimit: number;
+    }>();
+    expect(stremio).toMatchObject({ targetLanguages: ['hr'], dailyJobLimit: 7 });
+    // Every read-only endpoint is free of the key as well.
+    for (const url of ['/api/v1/meta', '/api/v1/settings', '/api/v1/stremio']) {
+      expect((await get(url)).body).not.toContain(key);
+    }
+
+    // Removing the key.
+    expect((await put({ secrets: { openai: null } })).statusCode).toBe(200);
+    const after = (await get('/api/v1/settings')).json<{
+      apiKeys: { openai: { configured: boolean } };
+    }>();
+    expect(after.apiKeys.openai.configured).toBe(false);
+  });
+
+  it.each([
+    ['an unknown language', { stremio: { targetLanguages: ['xx-Nope'] } }],
+    ['an unknown provider', { ai: { provider: 'acme' } }],
+    ['a negative limit', { stremio: { dailyJobLimit: -1 } }],
+    ['segments too small', { ai: { maxSegmentEntries: 1 } }],
+    ['custom profile without instructions', { ai: { translationProfile: 'custom' } }],
+  ])('refuses %s with 400 and a readable reason, saving nothing', async (_name, patch) => {
+    const before = (await get('/api/v1/settings')).body;
+    const res = await put(patch);
+    expect(res.statusCode).toBe(400);
+    expect(res.json<{ message: string }>().message.length).toBeGreaterThan(5);
+    expect((await get('/api/v1/settings')).body).toBe(before);
+  });
+});
+
 describe('notifications and metadata', () => {
   it('lists notifications and marks them read', async () => {
     const { job } = (await submit()).json<{ job: JobView }>();

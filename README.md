@@ -6,10 +6,12 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phases 0–5 complete.** The Stremio add-on is built on the official SDK and
-> connected to the background translation system; it has been tested with simulated Stremio
-> requests but **not yet in Stremio Desktop** (see [docs/STREMIO.md](docs/STREMIO.md)).
-> Next: the full dashboard — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+> **Status: Phases 0–6 complete** (Phase 6 awaiting approval). The Stremio add-on works in
+> Stremio 6.0.7 over HTTPS and translates only when "AI translate" is picked in the subtitle
+> menu (see [docs/STREMIO.md](docs/STREMIO.md)). The dashboard has an overview with live
+> progress, history, job details with a timeline, and a settings page (AI provider, models,
+> encrypted API keys, sources, Stremio, cache). Next: Phase 7, integration and reliability —
+> see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
 

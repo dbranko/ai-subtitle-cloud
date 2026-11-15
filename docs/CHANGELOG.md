@@ -2,6 +2,33 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 6 — Dashboard and notifications (2026-11-15)
+
+### Added
+
+- `GET /api/v1/jobs/:id/events`: a job's timeline — creation, state changes, new status
+  details (e.g. a rejected AI answer), the outcome and its notification; plain progress
+  updates are folded away. Uses the `job_events(jobId, id)` index.
+- Dashboard navigation with hash routes: Overview, History, Settings, job details.
+- Overview: AI summary (provider, model, fallback, key status), active jobs, notifications,
+  Stremio card, recent jobs with a failed count, recent activity.
+- Job details page with all facts, live progress, cancel / retry / download and the timeline.
+- History page: filter by outcome, pages of 20, download links; refreshes when a job finishes.
+- Settings page: AI, write-only API keys, sources, Stremio, defaults, cache limits and
+  "Clean up now".
+- Tests: API timeline and settings validation (unit); Playwright `e2e/dashboard.spec.ts`
+  (parallel jobs, settings without key leakage, history, details).
+
+### Decisions
+
+1. **Hash routes, no router library.** Four pages do not justify a dependency; hash routes
+   need no server configuration and survive reloads.
+2. **Timeline from the existing event log** rather than a new table. The log is bounded
+   (5000 events), so very old jobs may show `truncated` — said on the page, not hidden.
+3. **Saving settings stores every shown value**, so once saved they override `.env`. The page
+   says so. Keys are the exception: an empty key field means "keep the current key".
+4. **History lists finished jobs only**; active ones are on the overview with live progress.
+
 ## Translation engine: formatting tags repaired instead of retried (2026-11-15)
 
 Seen in a real job: `Segment 6: answer rejected (id 209: formatting tags must be copied

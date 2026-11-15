@@ -89,9 +89,9 @@ Environment variables (`.env`), all optional except the key of the provider you 
 | `PRICING_FILE`           | `config/pricing.json` | Price table                                                 |
 
 A single request can override provider, model, fallback, effort and temperature
-(`ProviderSelection`) — this is what manual translations from the dashboard will use. The
-dashboard settings page (Phase 6) will edit the same settings; they are environment-based
-until then.
+(`ProviderSelection`) — this is what manual translations from the dashboard use. The
+dashboard's Settings page edits the same settings (and the API keys, stored encrypted);
+values saved there override the environment and apply without a restart.
 
 "Temperature or equivalent": `AI_EFFORT` is the setting that works on all three providers
 and is the recommended control. `AI_TEMPERATURE` exists for providers that accept it.
