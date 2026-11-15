@@ -82,6 +82,14 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
     },
   });
 
+  // Stremio's own interface is a web page served from the internet that calls this add-on on
+  // 127.0.0.1. Chromium-based shells ask permission for such "private network" requests in a
+  // preflight; without this header they refuse to load the manifest.
+  app.addHook('onRequest', (_req, reply, done) => {
+    reply.raw.setHeader('access-control-allow-private-network', 'true');
+    done();
+  });
+
   // Authentication. Registered before the SDK router so that it runs first.
   app.addHook('onRequest', async (req, reply) => {
     if (!token || req.url.startsWith('/health')) return;

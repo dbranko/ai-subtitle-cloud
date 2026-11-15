@@ -125,6 +125,30 @@ describe('manifest', () => {
     });
   });
 
+  it('answers the browser preflight a web-based Stremio sends before calling a local add-on', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/manifest.json',
+      headers: {
+        origin: 'https://web.stremio.com',
+        'access-control-request-method': 'GET',
+        'access-control-request-private-network': 'true',
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('*');
+    expect(res.headers['access-control-allow-private-network']).toBe('true');
+    // The header is present on the actual responses as well.
+    expect((await get('/manifest.json')).headers['access-control-allow-private-network']).toBe(
+      'true',
+    );
+    expect(
+      (await get('/subtitles/movie/tt0111161.json')).headers[
+        'access-control-allow-private-network'
+      ],
+    ).toBe('true');
+  });
+
   it('declares only what is implemented and promises no in-player progress', async () => {
     const manifest = (await get('/manifest.json')).json<{
       resources: string[];
