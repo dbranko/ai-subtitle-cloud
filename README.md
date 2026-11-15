@@ -6,11 +6,12 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phases 0–6 complete** (Phase 6 awaiting approval). The Stremio add-on works in
+> **Status: Phases 0–7 complete** (Phase 7 awaiting approval). The Stremio add-on works in
 > Stremio 6.0.7 over HTTPS and translates only when "AI translate" is picked in the subtitle
 > menu (see [docs/STREMIO.md](docs/STREMIO.md)). The dashboard has an overview with live
-> progress, history, job details with a timeline, and a settings page (AI provider, models,
-> encrypted API keys, sources, Stremio, cache). Next: Phase 7, integration and reliability —
+> progress, history, job details with a timeline, and a settings page. Phase 7 added
+> integration tests through the production code path, fuzzing, and browser-facing security
+> (see [docs/TESTING.md](docs/TESTING.md)). Next: Phase 8, deployment —
 > see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
@@ -67,18 +68,19 @@ Ports are published on `127.0.0.1` only.
 
 ## Commands
 
-| Command               | What it does                                            |
-| --------------------- | ------------------------------------------------------- |
-| `pnpm dev`            | Run everything in watch mode                            |
-| `pnpm build`          | Generate Prisma client, compile TypeScript, build UI    |
-| `pnpm test`           | Run the Vitest suite (no real AI calls, temp databases) |
-| `pnpm lint`           | ESLint (type-aware)                                     |
-| `pnpm format`         | Prettier write (`format:check` to verify)               |
-| `pnpm typecheck`      | Strict type check of every package                      |
-| `pnpm check`          | format check + lint + typecheck + test                  |
-| `pnpm db:migrate`     | Apply pending migrations                                |
-| `pnpm db:migrate:dev` | Create a new migration after editing the schema         |
-| `pnpm start:api`      | Run a built service (`start:worker`, `start:addon`)     |
+| Command               | What it does                                                 |
+| --------------------- | ------------------------------------------------------------ |
+| `pnpm dev`            | Run everything in watch mode                                 |
+| `pnpm build`          | Generate Prisma client, compile TypeScript, build UI         |
+| `pnpm test`           | Run the Vitest suite (no real AI calls, temp databases)      |
+| `pnpm test:e2e`       | Playwright: real processes and browser (see docs/TESTING.md) |
+| `pnpm lint`           | ESLint (type-aware)                                          |
+| `pnpm format`         | Prettier write (`format:check` to verify)                    |
+| `pnpm typecheck`      | Strict type check of every package                           |
+| `pnpm check`          | format check + lint + typecheck + test                       |
+| `pnpm db:migrate`     | Apply pending migrations                                     |
+| `pnpm db:migrate:dev` | Create a new migration after editing the schema              |
+| `pnpm start:api`      | Run a built service (`start:worker`, `start:addon`)          |
 
 ## Repository layout
 

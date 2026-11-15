@@ -20,6 +20,23 @@ phase that delivers it.
   and downloads (bearer header, or `?token=` where headers are impossible), with a
   constant-time comparison. Health endpoints stay open. Covered by tests.
 - **[built]** API routes are rate-limited (600 requests per minute per client address).
+- **[built]** Protection against websites open in the owner's browser (tested in a real
+  browser, `e2e/csrf.spec.ts`):
+  - **DNS rebinding:** without `AUTH_TOKEN`, the API and the add-on answer only to known host
+    names — `localhost`, `127.0.0.1`, `::1`, the hosts of `ADDON_PUBLIC_URL` /
+    `DASHBOARD_PUBLIC_URL`, and `ALLOWED_HOSTS` — and refuse anything else with `403
+host_not_allowed`. With a token, the token is the protection. Health checks are exempt.
+  - **Cross-site requests (CSRF):** the API refuses state-changing requests (POST, PUT…)
+    that a browser marks as coming from another site (`Origin` differs from `Host`, or
+    `Sec-Fetch-Site: cross-site`) with `403 cross_site_request`.
+  - Residual risk: the add-on must accept cross-site requests (Stremio Web loads subtitles
+    from another origin), so a page could make the browser load an "AI translate" entry.
+    The daily limit (`STREMIO_DAILY_JOB_LIMIT`) caps what that can cost; recent Chromium
+    browsers also block such requests themselves.
+- **[built]** Security headers on every answer (add-on SDK answers included):
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (add-on and download URLs
+  can carry the token), `X-Frame-Options: DENY`; the dashboard also gets a Content Security
+  Policy that allows only its own scripts and its own API.
 - **[built]** With `AUTH_TOKEN` set, the Stremio add-on exists only under `/<token>/...`:
   manifest, subtitles and translated files are refused without it (constant-time
   comparison), and the token is part of every subtitle URL the add-on hands out. The address
@@ -33,7 +50,9 @@ phase that delivers it.
 
 - **[built]** `.env` and `.env.*` are git-ignored; only `.env.example` (no values) is tracked.
 - **[built]** Logger redaction for `authorization`, `cookie`, `x-api-key` headers and any
-  `apiKey`, `token`, `authToken`, `password`, `secret` field. Configuration is logged through
+  `apiKey`, `token`, `authToken`, `password`, `secret` field, and secret query values in
+  request URLs (`?token=` of the event stream — previously logged in plain text, fixed in
+  Phase 7). Configuration is logged through
   `describeConfig()`, which reduces secrets to booleans. Covered by tests.
 - **[built]** The dashboard bundle imports no server package and receives no secret.
 - **[built]** AI provider keys are read server-side from the environment only. They are sent
@@ -50,7 +69,7 @@ phase that delivers it.
   key never appears.
 - **[planned — Phase 8]** CI/repository check that no secret is committed.
 
-## Input handling [planned — with the feature that accepts the input]
+## Input handling
 
 - **[built]** Upload size limit (`MAX_UPLOAD_BYTES`) and content validation: an upload that
   does not parse as SRT is rejected before a job exists.
@@ -74,10 +93,22 @@ phase that delivers it.
 
 - **[built]** All runtime data lives under `data/` (git-ignored). Containers run as a
   non-root user.
-- **[planned — Phase 4]** Cache cleanup never deletes files of active jobs.
+- **[built]** Cache cleanup never deletes files of active jobs (`sources-cache.test.ts`).
+
+## Robustness
+
+- **[built]** Fuzz tests (seeded, reproducible) for the SRT parser, every API route and the
+  add-on: hostile input is answered with a 4xx, never a 500 or a crash. They found and
+  fixed: an uncaught `URIError` in the add-on's token check (a malformed `%` escape left the
+  request unanswered), a dashboard crash on a malformed job link, and an SRT index that did
+  not survive a save/load round trip. See [TESTING.md](TESTING.md).
 
 ## Dependencies
 
 - pnpm blocks dependency install scripts by default; only `better-sqlite3`, `esbuild`,
   `prisma` and `@prisma/engines` are allowed (`pnpm-workspace.yaml`).
 - The lockfile is committed and CI installs with `--frozen-lockfile`.
+- `pnpm audit --prod`: no known vulnerabilities (2026-11-15). The Stremio SDK pins
+  `path-to-regexp` 0.1.7 (ReDoS) and an old `tmp`; `pnpm-workspace.yaml` overrides them with
+  the fixed releases. One moderate finding remains in a development-only lint dependency
+  (`minimatch` under `typescript-eslint`); it is not part of the application.

@@ -2,6 +2,53 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 7 — Full integration and reliability (2026-11-15)
+
+### Added
+
+- Integration tests through the production translator factory with the real Claude, OpenAI
+  and Gemini SDK adapters over a fake HTTP transport (`providers-integration.test.ts`), and
+  movie/episode × `sr-Latn` / `sr-Cyrl` / `hr` through the real OpenSubtitles adapter
+  (`language-matrix.test.ts`). Test seams: `createDefaultTranslatorFactory({ fetch, sleep })`
+  and the `@asc/ai-providers/testing` export.
+- Seeded fuzz tests for the SRT parser, the API and the add-on.
+- Playwright: `e2e/reliability.spec.ts` (Stremio request shapes, crash and restart during a
+  Stremio translation, hostile addresses, dashboard under CSP) and `e2e/csrf.spec.ts`.
+- `docs/TESTING.md`: how the suites work and which test covers which scenario.
+- `ALLOWED_HOSTS` setting; browser protections and security headers (see SECURITY.md).
+
+### Fixed (found by the new tests)
+
+1. **One cut-off or empty AI answer failed the whole translation.** A reply truncated at the
+   output limit (or empty) from every provider now counts as a rejected answer for that
+   segment: the segment is asked again, within the usual 3 attempts.
+2. **Add-on: a malformed address could leave a request unanswered.** With `AUTH_TOKEN`, a
+   `%` escape such as `/%E0%A4%A/manifest.json` threw an uncaught `URIError` in the token
+   check. Now refused with 400; the process is unaffected.
+3. **The access token was written to the API log** for every event-stream connection
+   (`?token=` in the request URL). Request URLs are now logged with secret query values
+   replaced by `[redacted]`.
+4. **Dashboard: a malformed job link (`#/jobs/%E0`) crashed the page.** It now shows "Job not
+   found".
+5. **SRT parser: a number of more than 9 digits above a timing line was taken as the index**,
+   became a float (`3.3e+21`) and did not survive saving and loading. Such a line is now text.
+6. **Dependency audit:** `path-to-regexp` 0.1.7 in the Stremio SDK router (ReDoS) and an old
+   `tmp` overridden with fixed releases.
+
+### Decisions
+
+1. **Host allow-list only without a token.** DNS rebinding is harmless when every request
+   needs the token, and tunnels/reverse proxies with a token keep working under any name.
+   Without a token, the public URLs and `ALLOWED_HOSTS` extend the list, so an existing setup
+   that already set `ADDON_PUBLIC_URL` / `DASHBOARD_PUBLIC_URL` keeps working.
+2. **CSRF check by `Origin`/`Sec-Fetch-Site`, not tokens in forms.** The dashboard is a
+   same-origin script; browsers always send these headers on cross-site writes. Clients that
+   are not browsers (curl, scripts) send neither and are unaffected.
+3. **The add-on stays open to cross-site requests**, as Stremio Web requires; the daily limit
+   remains the cap on what a page could start (documented as residual risk).
+4. **Truncated/empty answers retried at segment level, refusals not.** A refusal tends to
+   repeat and is better shown to the owner than retried silently.
+
 ## Phase 6 — Dashboard and notifications (2026-11-15)
 
 ### Added

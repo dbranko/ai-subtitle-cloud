@@ -13,6 +13,11 @@ token once in its address (`/?token=…`), keeps it in the browser and removes i
 API routes are rate-limited to 600 requests per minute per client address (the event stream
 is exempt).
 
+Without `AUTH_TOKEN` the API answers only to the host names in `ALLOWED_HOSTS` plus
+`localhost`, `127.0.0.1`, `::1` and the hosts of the public URLs; changes (POST, PUT) sent by
+a browser from another website are refused. Scripts and `curl` are unaffected. See
+[SECURITY.md](SECURITY.md).
+
 ## Errors
 
 ```json
@@ -23,6 +28,7 @@ is exempt).
 | ------ | --------------------------------------------------------------------------------------------------- |
 | 400    | `source_invalid`, `unsupported_language`, `invalid_request`, `provider_not_configured`, `too_large` |
 | 401    | `unauthorized`                                                                                      |
+| 403    | `host_not_allowed` (unknown Host without a token), `cross_site_request` (sent by another website)   |
 | 404    | `not_found`                                                                                         |
 | 409    | `conflict` (action not possible in the job's current state)                                         |
 | 413    | `too_large`                                                                                         |

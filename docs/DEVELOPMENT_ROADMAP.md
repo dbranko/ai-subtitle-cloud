@@ -146,12 +146,24 @@ settings, history, downloads. Tests: SSE reconnection, browser refresh, multiple
       history filter and pages, job details with timeline; earlier SSE reconnect and refresh
       tests still green.
 
-## Phase 7 — Full integration and reliability
+## Phase 7 — Full integration and reliability **[done — awaiting approval]**
 
 End-to-end tests: movie, episode, Serbian Latin, Serbian Cyrillic, Croatian, provider
 failure, rate limits, cache reuse, restart, cancellation, concurrent jobs, Stremio client
 compatibility. Fix every critical issue found.
 **Deliverable:** stable integrated application.
+
+- [x] Integration tests through the production provider path (real SDK adapters, fake HTTP):
+      rate limits with and without `retry-after`, overload, rejected key, all providers down
+      then retry, cut-off answers, cancellation during a pause.
+- [x] Movie and episode × Serbian Latin / Serbian Cyrillic / Croatian through the real
+      OpenSubtitles adapter, worker, engine and cache; timing compared entry by entry.
+- [x] End-to-end: Stremio client request shapes, worker crash and add-on restart during a
+      Stremio translation, hostile addresses, dashboard under CSP.
+- [x] Fuzzing of parser, API and add-on.
+- [x] Security review: tokens out of logs, DNS rebinding and CSRF protection, security
+      headers, dependency audit.
+- [x] Every issue found fixed (see CHANGELOG); scenario matrix in [TESTING.md](TESTING.md).
 
 ## Phase 8 — Deployment and portability
 

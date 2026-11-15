@@ -98,6 +98,18 @@ export class Stack {
     this.worker = undefined;
   }
 
+  async killAddon(): Promise<void> {
+    await terminate(this.addon, 'SIGKILL');
+    this.addon = undefined;
+  }
+
+  /** True while the add-on process is running (it has not crashed). */
+  addonAlive(): boolean {
+    return (
+      this.addon !== undefined && this.addon.exitCode === null && this.addon.signalCode === null
+    );
+  }
+
   async killApi(): Promise<void> {
     await terminate(this.api, 'SIGKILL');
     this.api = undefined;

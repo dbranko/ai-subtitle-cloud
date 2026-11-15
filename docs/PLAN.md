@@ -12,8 +12,8 @@ Stanje na dan 2026-11-15. Grana: `claude/intelligent-heisenberg-i96tw4`.
 | 3    | Asinhroni job engine, napredak, SSE, obavijesti | Završeno, odobreno                                 |
 | 4    | Izvori titlova (OpenSubtitles), keš             | Završeno, odobreno (živi test)                     |
 | 5    | Stremio add-on                                  | Završeno, provjereno u Stremiu 6.0.7 (HTTPS tunel) |
-| 6    | Dashboard i obavijesti                          | **Završeno — čeka odobrenje**                      |
-| 7    | Sigurnost, robusnost, testovi                   | Nije počelo                                        |
+| 6    | Dashboard i obavijesti                          | Završeno, odobreno                                 |
+| 7    | Sigurnost, robusnost, testovi                   | **Završeno — čeka odobrenje**                      |
 | 8    | Deploy i dokumentacija                          | Nije počelo                                        |
 
 ## Urađeno izvan plana, na zahtjev vlasnika
@@ -36,24 +36,42 @@ be copied exactly“):
 - ako ni u zadnjem pokušaju AI ne prenese tagove usred rečenice, titl se zadržava bez tih
   tagova (uz upozorenje `markup_simplified`) umjesto da cijeli posao padne.
 
-## Faza 6 — urađeno
+## Faza 7 — urađeno
 
-- podešavanja u bazi, primjenjuju se bez restarta; API ključevi šifrovani (AES-256-GCM) i
-  nikad se ne vraćaju pregledniku;
-- API: podešavanja, aktivnost, poslovi sa filterom i stranicama, vremenska linija posla
-  (`GET /api/v1/jobs/:id/events`);
-- dashboard: Pregled · Historija · Podešavanja · Detalji posla (`#/jobs/<id>`);
-- pregled: AI provajder/model/rezervni/ključ, forme za prevod, aktivni poslovi uživo,
-  obavijesti, Stremio, nedavni (sa brojem neuspjelih), nedavna aktivnost;
-- detalji: sve činjenice, živi napredak, otkaži/ponovi/preuzmi, vremenska linija;
-- historija: filter (svi/završeni/neuspjeli/otkazani), stranice po 20, preuzimanje;
-- podešavanja: AI, ključevi (samo upis), izvori, Stremio, podrazumijevano, keš + čišćenje;
-- testovi: unit (vremenska linija, validacija podešavanja) i Playwright (tri posla, dva
-  paralelno; podešavanja bez curenja ključa; historija; detalji).
+**Integracijski testovi kroz pravi produkcijski put** (lažna je samo mreža):
+
+- AI: pravi Claude/OpenAI/Gemini adapteri (zvanični SDK-ovi) sa lažnim HTTP-om u pravom
+  formatu svakog provajdera — rate limit sa i bez `retry-after`, preopterećenje, odbijen
+  ključ, svi provajderi pali pa ponovni pokušaj, odsječen odgovor, otkazivanje tokom pauze;
+- film i epizoda × srpski latinica / srpski ćirilica / hrvatski kroz pravi OpenSubtitles
+  adapter, worker, engine i keš; tajming upoređen titl po titl; drugi zahtjev iz keša;
+- Playwright: oblici zahtjeva Stremio klijenata, pad workera i restart add-ona usred
+  Stremio prevoda, zlonamjerne adrese, dashboard pod CSP-om, CSRF u pravom pregledniku;
+- fuzz testovi: parser (3500 fajlova), API (600 tijela zahtjeva), add-on (1400 adresa).
+
+**Pronađeno i popravljeno:**
+
+1. Jedan odsječen ili prazan AI odgovor obarao je cijeli prevod → sada se ponavlja samo
+   taj segment.
+2. Add-on sa tokenom: neispravna `%` adresa ostavljala je zahtjev bez odgovora (neuhvaćen
+   `URIError`) → sada 400.
+3. API je upisivao `AUTH_TOKEN` u log (SSE `?token=`) → sada `[redacted]`.
+4. Dashboard: neispravan link posla rušio je stranicu → sada „Job not found“.
+5. Parser: broj sa više od 9 cifara uziman je kao indeks → sada je tekst.
+6. Ranjive zavisnosti Stremio SDK-a (`path-to-regexp`, `tmp`) → zamijenjene ispravljenim.
+
+**Nova zaštita:** bez `AUTH_TOKEN` servisi odgovaraju samo poznatim imenima hosta
+(localhost, 127.0.0.1, javne adrese, `ALLOWED_HOSTS`); API odbija izmjene koje šalje druga
+web stranica; sigurnosna zaglavlja i CSP. Pregled testova: `docs/TESTING.md`.
+
+**Važno za postojeću instalaciju:** ako dashboard ili add-on otvarate preko nekog drugog
+imena (npr. ime računara u mreži) **bez** `AUTH_TOKEN`, dodajte to ime u `ALLOWED_HOSTS`.
+Tunel sa tokenom radi kao i prije.
 
 ## Sljedeće
 
-- **Odobrenje faze 6**, pa faza 7 (sigurnost, robusnost, integracijski testovi).
+- **Odobrenje faze 7**, pa faza 8 (deploy i dokumentacija).
+- I dalje čeka: provjera u pravom Stremiu da se prevodi samo na odabir u meniju.
 
 ## Otvorena pitanja / kasnije
 
