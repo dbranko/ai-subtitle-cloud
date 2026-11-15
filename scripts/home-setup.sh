@@ -125,7 +125,7 @@ say "Dashboard (open once with the token; it is remembered):"
 printf '\n    https://%s/?token=%s\n\n' "$DOMAIN" "$TOKEN"
 warn "the token is in these addresses: treat them like a password"
 
-RESOLVED="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+RESOLVED="$(getent ahostsv4 "$DOMAIN" 2>/dev/null | awk 'NR == 1 { print $1 }' || true)"
 if [ -z "$RESOLVED" ]; then
   warn "$DOMAIN does not resolve from this server — check the name at your DNS provider"
 else

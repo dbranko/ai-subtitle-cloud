@@ -33,6 +33,13 @@ Newest first. Each phase records what was added and the decisions made, with rea
 
 - Restore rejected valid archives (`tar | grep -q` under `pipefail`); backup returned before
   the services were ready again.
+- **`home-check.sh` sent the access token to whatever server the name pointed to.** On the
+  owner's server a mistyped name led to a third-party server, which answered `/health` with
+  200, so the check reported success and then requested `/<token>/manifest.json` there. The
+  check now first proves the name leads to this installation (API uptime through the proxy
+  equals the uptime inside the container) and sends the token only then. A token that was
+  sent elsewhere must be replaced (see DEPLOY_HOME.md).
+- `home-check.sh` / `home-setup.sh` stopped silently when the name did not resolve.
 
 ## Phase 7 — Full integration and reliability (2026-11-15, approved)
 

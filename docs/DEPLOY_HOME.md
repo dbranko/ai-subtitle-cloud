@@ -123,6 +123,16 @@ telefonu; token se zapamti, a adresa se očisti. Tamo u **Settings** upišite AI
 - Nakon restarta servera sve se samo pokreće (`restart: unless-stopped`), ako je Docker
   servis uključen: `sudo systemctl enable docker`.
 
+## Novi token (ako je token procurio)
+
+```bash
+sed -i 's/^AUTH_TOKEN=.*/AUTH_TOKEN=/' .env
+scripts/home-setup.sh <vaše-ime>
+```
+
+Zatim u NPM-u promijenite Custom location na novi `/<token>` i ponovo instalirajte add-on u
+Stremiu (stara adresa prestaje da radi).
+
 ## Ako nešto ne radi
 
 | Simptom                                        | Uzrok i rješenje                                                                                                       |
