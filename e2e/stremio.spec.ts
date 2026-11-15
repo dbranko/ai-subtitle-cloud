@@ -25,7 +25,7 @@ interface Subtitles {
 }
 const EPISODE = `${ADDON_URL}/subtitles/series/tt0903747:2:5/videoHash=abcdef0123456789&videoSize=123456.json`;
 
-test('Stremio flow: manifest, non-blocking request, progress in the dashboard, subtitle on the next request', async ({
+test('Stremio flow: manifest, translate entries, translation only when picked, progress in the dashboard, subtitle on the next request', async ({
   page,
 }) => {
   // The add-on process serves a valid manifest through the SDK.
@@ -60,12 +60,25 @@ test('Stremio flow: manifest, non-blocking request, progress in the dashboard, s
   await expect(page.getByTestId('connection')).toHaveAttribute('data-state', 'live');
   await expect(page.getByTestId('manifest-url')).toHaveText(`${ADDON_URL}/manifest.json`);
 
-  // Stremio opens the episode: the add-on answers immediately with nothing ready.
+  // Stremio opens the episode: the add-on answers immediately, offering one
+  // "AI translate" entry per language and starting nothing.
   const started = Date.now();
   const first = await fetch(EPISODE);
   expect(Date.now() - started).toBeLessThan(2000);
   expect(first.headers.get('cache-control')).toBe('max-age=0, public');
-  expect(((await first.json()) as Subtitles).subtitles).toEqual([]);
+  const offered = ((await first.json()) as Subtitles).subtitles;
+  expect(offered.map((s) => s.lang)).toEqual([
+    'Serbian (Latin) · AI translate',
+    'Serbian (Cyrillic) · AI translate',
+  ]);
+  expect((await stack.jobs()).length).toBe(1);
+
+  // The viewer picks both entries in the subtitle menu: Stremio loads them, which starts the jobs.
+  for (const entry of offered) {
+    const picked = await fetch(entry.url);
+    expect(picked.status).toBe(200);
+    expect(await picked.text()).toContain('AI prevod je pokrenut.');
+  }
 
   // The dashboard — the companion progress page — shows the jobs Stremio started, live.
   const stremioJobs = page.locator('[data-testid=job]', { hasText: 'requested by Stremio' });
@@ -73,8 +86,8 @@ test('Stremio flow: manifest, non-blocking request, progress in the dashboard, s
   await expect(stremioJobs.first()).toContainText('Breaking Bad S02E05');
 
   // Asking again while it is translating creates nothing new and still does not block.
-  const again = await fetch(EPISODE);
-  expect(((await again.json()) as Subtitles).subtitles.length).toBeLessThan(2);
+  await fetch(EPISODE);
+  await fetch(offered[0]?.url ?? '');
   expect((await stack.jobs()).length).toBe(3);
 
   await expect(
@@ -124,11 +137,16 @@ test('the add-on keeps answering from the cache while the worker and the API are
     ((await upload.json()) as { job: { id: string } }).job.id,
     (j) => j.state === 'completed',
   );
-  await fetch(EPISODE);
+  const offered = ((await (await fetch(EPISODE)).json()) as Subtitles).subtitles;
+  for (const entry of offered) await fetch(entry.url);
   await expect
-    .poll(async () => ((await (await fetch(EPISODE)).json()) as Subtitles).subtitles.length, {
-      timeout: 60_000,
-    })
+    .poll(
+      async () =>
+        ((await (await fetch(EPISODE)).json()) as Subtitles).subtitles.filter(
+          (s) => s.lang === 'srp',
+        ).length,
+      { timeout: 60_000 },
+    )
     .toBe(2);
 
   await stack.killWorker();

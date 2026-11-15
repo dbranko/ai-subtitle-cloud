@@ -5,17 +5,17 @@ Rules: one phase at a time; each phase is implemented, tested and documented, th
 implementation is finished, automated and relevant integration tests pass, documentation is
 updated, no known critical error remains and a summary has been reported.
 
-| Phase | Name                                                                   | Status                                   |
-| ----- | ---------------------------------------------------------------------- | ---------------------------------------- |
-| 0     | Project foundation                                                     | Done (approved)                          |
-| 1     | SRT engine                                                             | Done (approved)                          |
-| 2     | AI providers                                                           | Done (approved)                          |
-| 3     | Persistent async job engine and progress system (**highest priority**) | Done (approved)                          |
-| 4     | Subtitle sources and cache                                             | Done (approved)                          |
-| 5     | Stremio add-on                                                         | **Built — Stremio Desktop test pending** |
-| 6     | Dashboard and notifications                                            | Not started                              |
-| 7     | Full integration and reliability                                       | Not started                              |
-| 8     | Deployment and portability                                             | Not started                              |
+| Phase | Name                                                                   | Status                                                   |
+| ----- | ---------------------------------------------------------------------- | -------------------------------------------------------- |
+| 0     | Project foundation                                                     | Done (approved)                                          |
+| 1     | SRT engine                                                             | Done (approved)                                          |
+| 2     | AI providers                                                           | Done (approved)                                          |
+| 3     | Persistent async job engine and progress system (**highest priority**) | Done (approved)                                          |
+| 4     | Subtitle sources and cache                                             | Done (approved)                                          |
+| 5     | Stremio add-on                                                         | Done (approved; verified in Stremio 6.0.7 through HTTPS) |
+| 6     | Dashboard and notifications                                            | Not started                                              |
+| 7     | Full integration and reliability                                       | Not started                                              |
+| 8     | Deployment and portability                                             | Not started                                              |
 
 ## Phase 0 — Project foundation ✅
 
@@ -115,8 +115,9 @@ translations and start background jobs for new ones. Details:
       with the install address; the add-on's Configure button opens the dashboard.
 - [x] Automatic and manual mode; daily limit for automatic translations.
 - [x] Access token in the add-on address when exposed beyond this computer.
-- [ ] **Test with actual Stremio Desktop — not done.** Stremio could not be run in the
-      development environment. A step-by-step checklist is in [STREMIO.md](STREMIO.md).
+- [x] Test with actual Stremio Desktop: done by the owner on Stremio 6.0.7 (Windows). The
+      add-on works through an HTTPS address; `http://127.0.0.1` is not accepted by that
+      version. See the field report in [STREMIO.md](STREMIO.md).
 
 No native progress capability was invented: the protocol has none, so the dashboard is the
 progress page. How the Stremio client picks up a subtitle that finishes later is the main

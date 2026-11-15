@@ -2,11 +2,12 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ensureStorageDirs, loadConfig, type AppConfig } from '@asc/config';
 import { createTestDatabase, type TestDatabase } from '@asc/database';
-import { JobWorker, outputPath, waitForJob } from '@asc/jobs';
+import { JobWorker, outputPath, SettingsProvider, waitForJob } from '@asc/jobs';
 import { createLogger, type LivenessReport, type ReadinessReport } from '@asc/shared';
 import { parseSrt } from '@asc/subtitle-parser';
 import type { MediaQuery, SourceCandidate, SubtitleSource } from '@asc/subtitle-sources';
@@ -50,6 +51,8 @@ async function start(env: Record<string, string> = {}): Promise<void> {
     env: {
       NODE_ENV: 'test',
       MOCK_AI: 'true',
+      // Most tests here exercise the opt-in automatic mode; the on-demand tests override it.
+      STREMIO_AUTO_TRANSLATE: 'true',
       WORKER_POLL_INTERVAL_MS: '50',
       WORKER_LEASE_MS: '500',
       ...env,
@@ -116,7 +119,7 @@ describe('manifest', () => {
       id: 'local.ai-subtitle-cloud',
       version: '0.1.0',
       name: 'AI Subtitle Cloud',
-      description: expect.stringContaining('Translates subtitles into: Serbian (Latin).') as string,
+      description: expect.stringContaining('Personal AI subtitle translator') as string,
       resources: ['subtitles'],
       types: ['movie', 'series'],
       idPrefixes: ['tt'],
@@ -161,15 +164,21 @@ describe('manifest', () => {
     expect((await get('/catalog/movie/top.json')).statusCode).toBe(404);
   });
 
-  it('lists the configured target languages', async () => {
+  it('shows the configured target languages on its page and follows dashboard settings at once', async () => {
     await app.close();
     await t.cleanup();
     await start({ STREMIO_TARGET_LANGUAGES: 'sr-Latn, sr-Cyrl,hr, bs, nonsense' });
-    const manifest = (await get('/manifest.json')).json<{ description: string }>();
     // Bosnian is not a target and unknown ids are ignored.
-    expect(manifest.description).toContain(
-      'Translates subtitles into: Serbian (Latin), Serbian (Cyrillic), Croatian.',
-    );
+    expect((await get('/')).body).toContain('Serbian (Latin), Serbian (Cyrillic), Croatian');
+
+    // The owner changes the languages in the dashboard: no restart, no reinstall in Stremio.
+    await new SettingsProvider(t.db, config).update({
+      stremio: { targetLanguages: ['de'], autoTranslate: true },
+    });
+    await sleep(2100); // settings are re-read within two seconds
+    expect((await get('/')).body).toContain('<strong>German</strong>');
+    await subtitles(MOVIE);
+    expect((await t.db.translationJob.findMany()).map((j) => j.targetLanguage)).toEqual(['de']);
   });
 });
 
@@ -410,7 +419,12 @@ describe('subtitles handler — languages and modes', () => {
 
     await app.close();
     const both = loadConfig({
-      env: { NODE_ENV: 'test', MOCK_AI: 'true', STREMIO_TARGET_LANGUAGES: 'sr-Latn,hr' },
+      env: {
+        NODE_ENV: 'test',
+        MOCK_AI: 'true',
+        STREMIO_AUTO_TRANSLATE: 'true',
+        STREMIO_TARGET_LANGUAGES: 'sr-Latn,hr',
+      },
       rootDir: config.rootDir,
       useEnvFile: false,
     });
@@ -419,14 +433,6 @@ describe('subtitles handler — languages and modes', () => {
     expect(body.subtitles.map((s) => s.lang)).toEqual(['srp']);
     expect(body.cacheMaxAge).toBe(0); // Croatian is on its way: do not cache this answer
     expect(await t.db.translationJob.count({ where: { targetLanguage: 'hr' } })).toBe(1);
-  });
-
-  it('in manual mode serves existing translations but never starts one', async () => {
-    await app.close();
-    await t.cleanup();
-    await start({ STREMIO_AUTO_TRANSLATE: 'false' });
-    expect((await subtitles(MOVIE)).body).toEqual({ subtitles: [], cacheMaxAge: 0 });
-    expect(await t.db.translationJob.count()).toBe(0);
   });
 
   it('stops starting translations when the daily limit is reached', async () => {
@@ -630,5 +636,113 @@ describe('as a Stremio client sees it (real HTTP)', () => {
     const file = await fetch(base + new URL(second.subtitles[0]!.url).pathname);
     expect(file.status).toBe(200);
     expect(parseSrt(await file.text()).entries).toHaveLength(130);
+  });
+});
+
+describe('on-demand translation (default mode)', () => {
+  const translateUrl = (body: SubtitlesResponse) => {
+    const entry = body.subtitles.find((s) => s.id.startsWith('asc-translate-'));
+    if (!entry) throw new Error('no translate entry');
+    return new URL(entry.url).pathname + new URL(entry.url).search;
+  };
+
+  beforeEach(async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ STREMIO_AUTO_TRANSLATE: '', ADDON_PUBLIC_URL: 'http://127.0.0.1:7000' });
+  });
+
+  it('is the default and offers a translate entry without starting anything', async () => {
+    expect(config.stremio.autoTranslate).toBe(false);
+    const { body } = await subtitles(
+      '/subtitles/movie/tt0111161/videoHash=abcdef0123456789&filename=Movie.mkv.json',
+    );
+    expect(body.cacheMaxAge).toBe(0);
+    expect(body.subtitles).toHaveLength(1);
+    const [entry] = body.subtitles;
+    // The label is not a language code, so Stremio never selects it by itself.
+    expect(entry?.lang).toBe('Serbian (Latin) · AI translate');
+    expect(entry?.url).toBe(
+      'http://127.0.0.1:7000/translate/sr-Latn/movie/tt0111161.srt?h=abcdef0123456789&f=Movie.mkv',
+    );
+    // Opening the video, even repeatedly, starts nothing.
+    await subtitles(MOVIE);
+    expect(await t.db.translationJob.count()).toBe(0);
+  });
+
+  it('starts the translation only when the entry is picked, then serves the result', async () => {
+    const url = translateUrl((await subtitles('/subtitles/series/tt0903747:2:5.json')).body);
+    expect(url).toBe('/translate/sr-Latn/series/tt0903747%3A2%3A5.srt');
+    // A HEAD probe must not start anything.
+    expect((await app.inject({ method: 'HEAD', url })).statusCode).toBe(404);
+    expect(await t.db.translationJob.count()).toBe(0);
+
+    const picked = await get(url);
+    expect(picked.statusCode).toBe(200);
+    expect(picked.headers['content-type']).toContain('application/x-subrip');
+    expect(picked.headers['cache-control']).toBe('no-store');
+    expect(picked.body).toContain('AI prevod je pokrenut.');
+    expect(parseSrt(picked.body).entries.length).toBeGreaterThan(10);
+    const jobs = await t.db.translationJob.findMany();
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]).toMatchObject({ origin: 'stremio', targetLanguage: 'sr-Latn' });
+
+    // Picking it again does not start a second translation; it reports progress.
+    const again = await get(url);
+    expect(again.body).toMatch(/AI prevod u toku: \d+%/);
+    expect(await t.db.translationJob.count()).toBe(1);
+    expect(
+      (await subtitles('/subtitles/series/tt0903747:2:5.json')).body.subtitles[0]?.lang,
+    ).toMatch(/^Serbian \(Latin\) · AI \d+%$/);
+
+    startWorker();
+    await allJobsDone();
+    // Finished: the menu now holds the real subtitle, with its language code.
+    const { body } = await subtitles('/subtitles/series/tt0903747:2:5.json');
+    expect(body.subtitles.map((s) => s.lang)).toEqual(['srp']);
+    expect(body.subtitles[0]?.url).toContain('/files/');
+    // An old translate entry that is still on screen now delivers the translation itself.
+    const late = await get(url);
+    expect(parseSrt(late.body).entries.length).toBeGreaterThan(100);
+    expect(late.body).not.toContain('AI prevod');
+  });
+
+  it('respects the daily limit when an entry is picked', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ STREMIO_AUTO_TRANSLATE: 'false', STREMIO_DAILY_JOB_LIMIT: '1' });
+    expect((await get('/translate/sr-Latn/movie/tt0000001.srt')).body).toContain('pokrenut');
+    const second = await get('/translate/sr-Latn/movie/tt0000002.srt');
+    expect(second.body).toContain('dnevni limit AI prevoda (1)');
+    expect(await t.db.translationJob.count()).toBe(1);
+  });
+
+  it('rejects entries for unknown languages or malformed ids', async () => {
+    expect((await get('/translate/de/movie/tt0111161.srt')).statusCode).toBe(404);
+    expect((await get('/translate/sr-Latn/movie/nonsense.srt')).statusCode).toBe(404);
+    expect((await get('/translate/sr-Latn/channel/tt0111161.srt')).statusCode).toBe(404);
+    expect(await t.db.translationJob.count()).toBe(0);
+  });
+
+  it('explains instead of failing when no AI provider is configured', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ STREMIO_AUTO_TRANSLATE: 'false', MOCK_AI: 'false' });
+    const res = await get('/translate/sr-Latn/movie/tt0111161.srt');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('AI prevod nije moguć');
+    expect(await t.db.translationJob.count()).toBe(0);
+  });
+
+  it('requires the access token like every other add-on path', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ STREMIO_AUTO_TRANSLATE: 'false', AUTH_TOKEN: 'secret-token-1234567890abcdef' });
+    expect((await get('/translate/sr-Latn/movie/tt0111161.srt')).statusCode).toBe(401);
+    const { body } = await subtitles(`/secret-token-1234567890abcdef${MOVIE}`);
+    expect(body.subtitles[0]?.url).toContain(
+      '/secret-token-1234567890abcdef/translate/sr-Latn/movie/',
+    );
+    expect(await t.db.translationJob.count()).toBe(0);
   });
 });

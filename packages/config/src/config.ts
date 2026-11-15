@@ -52,7 +52,7 @@ const envSchema = z.object({
   ADDON_PUBLIC_URL: optionalString,
   DASHBOARD_PUBLIC_URL: optionalString,
   STREMIO_TARGET_LANGUAGES: z.string().default('sr-Latn'),
-  STREMIO_AUTO_TRANSLATE: bool(true),
+  STREMIO_AUTO_TRANSLATE: bool(false),
   STREMIO_PROFILE: optionalString,
   STREMIO_DAILY_JOB_LIMIT: z.coerce.number().int().min(0).default(20),
   STREMIO_LANGUAGE_LABELS: z.string().default(''),

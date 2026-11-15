@@ -2,6 +2,31 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Stremio: translation only on demand (owner request, 2026-11-15)
+
+### Changed
+
+- **Default mode is now on demand** (`STREMIO_AUTO_TRANSLATE=false`). Opening a video starts
+  nothing. Stremio's subtitle menu offers `<language> · AI translate` for every language not
+  translated yet; picking it loads `/translate/<lang>/<type>/<id>.srt`, which starts the job
+  (subject to the daily limit) and returns a status message. While the job runs the entry
+  shows `· AI <n>%`; when it is finished the real subtitle replaces it.
+- Automatic mode remains as an explicit opt-in (`STREMIO_AUTO_TRANSLATE=true`). The old
+  manual mode (only existing translations, no entries) is replaced by on demand.
+- The daily limit applies to translations started from the menu as well.
+
+### Decisions
+
+1. **Phase 5 decision 2 is revised at the owner's request.** The only thing the Stremio
+   protocol lets a viewer "choose" is a subtitle entry, and Stremio loads an entry's URL only
+   when it is selected — so the start action has to be an entry. Its content is an honest
+   status message ("AI prevod je pokrenut…", "AI prevod u toku: 42%"), worded as a status
+   and never as a translation, and the entry's label is not a language code, so Stremio's
+   automatic subtitle choice can never select it.
+2. **Only GET starts a translation; HEAD is not routed**, so a probe cannot start a paid job.
+3. **The entry carries the video hash, size and file name** in its query string, so the job
+   ranks source subtitles exactly as an automatic request would.
+
 ## Phase 5 — Stremio add-on (2026-11-15)
 
 ### Added

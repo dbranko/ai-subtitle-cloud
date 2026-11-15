@@ -236,7 +236,7 @@ In production the API serves the built dashboard at `/` with an SPA fallback. Un
 ## Stremio — `GET /api/v1/stremio`
 
 What the dashboard shows about the add-on: `manifestUrl`, `installUrl` (`stremio://…`),
-`reachable` (`this-computer`, `https` or `unsupported`), `targetLanguages`, `autoTranslate`,
+`reachable` (`this-computer`, `https` or `unsupported`), `targetLanguages`, `autoTranslate` (false = on demand from the subtitle menu),
 `profile`, `dailyJobLimit`, `startedLast24h`, `sourceConfigured`.
 
 The add-on's own routes (port 7000) are described in [STREMIO.md](STREMIO.md).

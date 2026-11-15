@@ -49,6 +49,7 @@ import {
   storeSource,
 } from './library.js';
 import { estimateRemainingSeconds, type SegmentTiming } from './progress.js';
+import type { SettingsProvider } from './settings.js';
 import {
   adoptTranslationKey,
   cancelOwnedJob,
@@ -73,12 +74,20 @@ export interface TranslatorHooks {
   onProviderEvent: (event: ProviderEvent) => void;
 }
 
-/** Builds the translator for one job. Injected so tests and mock mode need no real provider. */
-export type TranslatorFactory = (job: TranslationJob, hooks: TranslatorHooks) => SegmentTranslator;
+/**
+ * Builds the translator for one job. Injected so tests and mock mode need no
+ * real provider. `config` is the configuration in effect when the job starts
+ * (environment plus dashboard settings).
+ */
+export type TranslatorFactory = (
+  job: TranslationJob,
+  hooks: TranslatorHooks,
+  config: AppConfig,
+) => SegmentTranslator;
 
 /** Production factory: the mock translator in mock mode, otherwise the configured providers. */
-export function createDefaultTranslatorFactory(config: AppConfig): TranslatorFactory {
-  return (job, hooks) => {
+export function createDefaultTranslatorFactory(): TranslatorFactory {
+  return (job, hooks, config) => {
     if (job.provider === MOCK_PROVIDER) {
       if (!config.mockAi.enabled) {
         throw new ProviderConfigError(
@@ -104,6 +113,8 @@ export interface JobWorkerOptions {
   /** Unique per process start; identifies this worker as the owner of a job's lock. */
   workerId: string;
   createTranslator: TranslatorFactory;
+  /** Dashboard settings. When given, each job runs with the settings in effect as it starts. */
+  settings?: SettingsProvider;
   /** Remote subtitle sources. Default: those configured (OpenSubtitles when it has an API key). */
   sources?: SubtitleSource[];
   logger?: Logger;
@@ -119,6 +130,8 @@ type StopReason = 'cancel' | 'shutdown' | 'lost' | 'crash';
 
 interface RunningJob {
   job: TranslationJob;
+  /** Configuration in effect for this run. */
+  config: AppConfig;
   controller: AbortController;
   reason: StopReason | undefined;
   /** All writes for the job go through this chain, so they are applied strictly in order. */
@@ -237,10 +250,11 @@ export class JobWorker {
       this.lastPrune = Date.now();
       await pruneEvents(db).catch(() => undefined);
     }
-    const limited = config.cache.maxAgeDays > 0 || config.cache.maxSizeMb > 0;
+    const current = await this.effectiveConfig();
+    const limited = current.cache.maxAgeDays > 0 || current.cache.maxSizeMb > 0;
     if (limited && Date.now() - this.lastCleanup > CACHE_CLEANUP_INTERVAL_MS) {
       this.lastCleanup = Date.now();
-      const removed = await cleanupCache(db, config).catch(() => undefined);
+      const removed = await cleanupCache(db, current).catch(() => undefined);
       if (removed && removed.translationsRemoved > 0) logger?.info(removed, 'cache cleaned up');
     }
   }
@@ -272,6 +286,7 @@ export class JobWorker {
   private startJob(job: TranslationJob): void {
     const run: RunningJob = {
       job,
+      config: this.options.config,
       controller: new AbortController(),
       reason: undefined,
       writes: Promise.resolve(),
@@ -288,6 +303,10 @@ export class JobWorker {
         // Free capacity: look for the next job right away.
         if (!this.stopping) this.schedulePoll(0);
       });
+  }
+
+  private async effectiveConfig(): Promise<AppConfig> {
+    return this.options.settings ? this.options.settings.config() : this.options.config;
   }
 
   /** Serialize a write for the job and keep the in-memory copy in sync with the stored row. */
@@ -321,7 +340,10 @@ export class JobWorker {
   }
 
   private async process(run: RunningJob): Promise<void> {
-    const { db, config, workerId } = this.options;
+    const { db, workerId } = this.options;
+    // Settings saved in the dashboard apply to the next job, not to one that is running.
+    run.config = await this.effectiveConfig();
+    const config = run.config;
     const to = (state: Parameters<typeof transitionJob>[3], patch = {}) =>
       this.write(run, (job) => transitionJob(db, job, workerId, state, patch));
     const signal = run.controller.signal;
@@ -414,9 +436,11 @@ export class JobWorker {
 
     // 5. Translation, one segment at a time. Progress moves only when a segment is stored.
     await to('translating');
-    const translator = this.options.createTranslator(run.job, {
-      onProviderEvent: (event) => this.onProviderEvent(run, event),
-    });
+    const translator = this.options.createTranslator(
+      run.job,
+      { onProviderEvent: (event) => this.onProviderEvent(run, event) },
+      config,
+    );
     const timings: SegmentTiming[] = [];
     for (const segment of plan.segments) {
       if (results.has(segment.index)) continue;
@@ -491,8 +515,8 @@ export class JobWorker {
   }
 
   /** The remote sources plus the owner's own uploads, which are always searched first. */
-  private sources(): SubtitleSource[] {
-    const { db, config } = this.options;
+  private sources(config: AppConfig): SubtitleSource[] {
+    const { db } = this.options;
     return [
       createLibrarySource(db, config),
       ...(this.options.sources ?? createSourcesFromConfig(config)),
@@ -515,7 +539,7 @@ export class JobWorker {
     if (stored.pinned) {
       found = [stored.pinned];
     } else {
-      for (const source of this.sources()) {
+      for (const source of this.sources(run.config)) {
         try {
           found.push(...(await source.search(stored.query, stored.languages, { signal })));
         } catch (err) {
@@ -554,9 +578,10 @@ export class JobWorker {
    * candidate that turns out to be unusable is skipped and the next one tried.
    */
   private async acquireSource(run: RunningJob, candidates: RankedCandidate[]): Promise<void> {
-    const { db, config, workerId } = this.options;
+    const { db, workerId } = this.options;
+    const config = run.config;
     const stored = JSON.parse(run.job.mediaQuery ?? 'null') as StoredMediaQuery | null;
-    const sources = new Map(this.sources().map((s) => [s.id, s]));
+    const sources = new Map(this.sources(run.config).map((s) => [s.id, s]));
     const problems: string[] = [];
     let lastError: unknown;
 

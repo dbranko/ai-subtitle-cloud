@@ -601,8 +601,13 @@ function StremioCard() {
       <h2>Stremio</h2>
       <p>
         Languages: <strong>{info.targetLanguages.join(', ') || 'none configured'}</strong> ·
-        automatic translation <strong>{info.autoTranslate ? 'on' : 'off'}</strong>
-        {info.autoTranslate && info.dailyJobLimit > 0 && (
+        translation starts{' '}
+        <strong>
+          {info.autoTranslate
+            ? 'automatically when a video is opened'
+            : 'when you pick “AI translate” in the subtitle menu'}
+        </strong>
+        {info.dailyJobLimit > 0 && (
           <>
             {' '}
             · started in the last 24 h: {info.startedLast24h} / {info.dailyJobLimit}
@@ -615,10 +620,10 @@ function StremioCard() {
           address.
         </p>
       )}
-      {info.autoTranslate && !info.sourceConfigured && (
+      {!info.sourceConfigured && (
         <p className="detail">
           No subtitle source is configured (OPENSUBTITLES_API_KEY), so only titles you uploaded a
-          subtitle for can be translated automatically.
+          subtitle for can be translated from Stremio.
         </p>
       )}
       <p className="muted small">Add-on address:</p>
@@ -641,9 +646,9 @@ function StremioCard() {
         </button>
       </div>
       <p className="muted small">
-        Stremio cannot show translation progress. When you open a title, the translation starts in
-        the background and appears here; once it is finished, reopen the video in Stremio to get the
-        subtitle.
+        Stremio cannot show translation progress. Pick “AI translate” for a language in Stremio's
+        subtitle menu: the translation starts in the background and appears here; once it is
+        finished, reopen the video in Stremio and pick the subtitle.
       </p>
     </section>
   );

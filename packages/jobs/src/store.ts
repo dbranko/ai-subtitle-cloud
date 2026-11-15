@@ -514,6 +514,40 @@ export async function listJobs(
   });
 }
 
+export interface JobPageQuery {
+  scope?: JobScope | undefined;
+  /** Only jobs in this final state. */
+  status?: 'completed' | 'failed' | 'cancelled' | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
+}
+
+/** One page of jobs plus the total number that match (for the history table). */
+export async function listJobsPage(
+  db: Database,
+  query: JobPageQuery = {},
+): Promise<{ jobs: TranslationJob[]; total: number }> {
+  const active = [...ACTIVE_STATES];
+  const scope = query.scope ?? 'all';
+  const where = query.status
+    ? { state: query.status }
+    : scope === 'active'
+      ? { state: { in: active } }
+      : scope === 'finished'
+        ? { state: { notIn: active } }
+        : {};
+  const [jobs, total] = await Promise.all([
+    db.translationJob.findMany({
+      where,
+      orderBy: scope === 'active' && !query.status ? { createdAt: 'asc' } : { updatedAt: 'desc' },
+      take: Math.min(Math.max(query.limit ?? 50, 1), 200),
+      skip: Math.max(query.offset ?? 0, 0),
+    }),
+    db.translationJob.count({ where }),
+  ]);
+  return { jobs, total };
+}
+
 // ---------------------------------------------------------------------------
 // Worker side: claiming, leases, recovery
 // ---------------------------------------------------------------------------

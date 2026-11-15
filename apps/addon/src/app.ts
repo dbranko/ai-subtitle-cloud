@@ -7,10 +7,19 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import type * as StremioSdk from 'stremio-addon-sdk';
 import type { AppConfig } from '@asc/config';
 import { pingDatabase, type Database } from '@asc/database';
-import { outputPath } from '@asc/jobs';
+import { outputPath, SettingsProvider, toJobView } from '@asc/jobs';
 import { buildLiveness, buildReadiness, loggerOptions, type ReadinessCheck } from '@asc/shared';
 import { findLanguage } from '@asc/translation-engine';
-import { buildManifest, createSubtitlesHandler, stremioTargets } from './stremio.js';
+import {
+  buildManifest,
+  createSubtitlesHandler,
+  parseVideoId,
+  requestForStremio,
+  statusSrt,
+  statusText,
+  stremioTargets,
+  translateExtra,
+} from './stremio.js';
 
 // The SDK is a CommonJS package: load it with require so it works in a plain Node
 // process as well as under the test runner.
@@ -22,6 +31,8 @@ export interface AddonDeps {
   config: AppConfig;
   db: Database;
   startedAt?: Date;
+  /** Dashboard settings provider (tests share one with the API). */
+  settings?: SettingsProvider;
 }
 
 /** Health endpoints are polled constantly; only log them when something is wrong. */
@@ -64,6 +75,7 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
   const { config, db } = deps;
   const startedAt = deps.startedAt ?? new Date();
   const token = config.security.authToken;
+  const settings = deps.settings ?? new SettingsProvider(db, config);
 
   const app = Fastify({
     logger: config.nodeEnv === 'test' ? false : loggerOptions('addon', config.logLevel),
@@ -114,8 +126,16 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
   // --- Stremio protocol, through the official SDK ---------------------------
   const fileUrl = (file: string) =>
     `${config.stremio.publicUrl}${tokenPrefix(config)}/files/${file}`;
-  const builder = new addonBuilder(buildManifest(config));
-  builder.defineSubtitlesHandler(createSubtitlesHandler({ config, db, logger: app.log, fileUrl }));
+  const builder = new addonBuilder(buildManifest());
+  builder.defineSubtitlesHandler(
+    createSubtitlesHandler({
+      getConfig: () => settings.config(),
+      db,
+      logger: app.log,
+      fileUrl,
+      addonUrl: (path) => `${config.stremio.publicUrl}${tokenPrefix(config)}${path}`,
+    }),
+  );
   await app.register(middie);
   // The SDK router answers /manifest.json and /subtitles/...; everything else falls through.
   // (The SDK's type declarations give the router no type; it is a connect-style handler.)
@@ -149,13 +169,65 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
     );
   });
 
+  // --- On-demand translation --------------------------------------------------
+  // The "<language> · AI translate" entry in Stremio's subtitle menu points here. Stremio
+  // fetches a subtitle only when the viewer picks it, so this is where a translation starts.
+  // HEAD is not routed: only an actual load of the entry may start anything.
+  app.get<{
+    Params: { target: string; type: string; file: string };
+    Querystring: Record<string, unknown>;
+  }>('/translate/:target/:type/:file', { exposeHeadRoute: false }, async (req, reply) => {
+    const { target, type, file } = req.params;
+    const current = await settings.config();
+    const query = file.endsWith('.srt')
+      ? parseVideoId(type, file.slice(0, -4), translateExtra(req.query))
+      : null;
+    if (!query || !stremioTargets(current).includes(target)) {
+      return reply.code(404).header('access-control-allow-origin', '*').send({ err: 'not found' });
+    }
+    const outcome = await requestForStremio(db, current, query, target, true);
+    reply
+      .header('content-type', 'application/x-subrip; charset=utf-8')
+      .header('access-control-allow-origin', '*')
+      .header('cache-control', 'no-store');
+
+    if (outcome.kind !== 'result') {
+      return reply.send(statusSrt(statusText(target, outcome)));
+    }
+    const { result } = outcome;
+    if (result.status === 'cached' && result.translation) {
+      // Finished in the meantime: hand over the translation itself.
+      const path = outputPath(config, result.translation.file);
+      if (existsSync(path)) return reply.send(createReadStream(path));
+    }
+    if (result.status === 'created') {
+      req.log.info({ query, target }, 'translation started from the Stremio subtitle menu');
+      return reply.send(statusSrt(statusText(target, { kind: 'started' })));
+    }
+    const view = result.job ? toJobView(result.job) : null;
+    if (result.status === 'failed') {
+      const message = view?.error?.message ?? 'unknown error';
+      return reply.send(statusSrt(statusText(target, { kind: 'failed', message })));
+    }
+    return reply.send(
+      statusSrt(
+        statusText(target, {
+          kind: 'active',
+          percentage: view?.percentage ?? 0,
+          etaSeconds: view?.etaSeconds ?? null,
+        }),
+      ),
+    );
+  });
+
   // --- Pages for the owner ---------------------------------------------------
   // Stremio's "Configure" button opens /configure: send the owner to the dashboard.
   app.get('/configure', (_req, reply) => reply.redirect(config.stremio.dashboardUrl));
 
-  app.get('/', (_req, reply) => {
+  app.get('/', async (_req, reply) => {
+    const current = await settings.config();
     const url = manifestUrl(config);
-    const languages = stremioTargets(config).map((id) => findLanguage(id)?.name ?? id);
+    const languages = stremioTargets(current).map((id) => findLanguage(id)?.name ?? id);
     const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Subtitle Cloud — Stremio add-on</title>
@@ -165,7 +237,7 @@ code{background:#eef0f3;padding:2px 6px;border-radius:4px;word-break:break-all}a
 <body>
 <h1>AI Subtitle Cloud</h1>
 <p>Stremio add-on. Translates subtitles into: <strong>${escapeHtml(languages.join(', ') || 'no language configured')}</strong>.</p>
-<p>Automatic translation: <strong>${config.stremio.autoTranslate ? 'on' : 'off'}</strong></p>
+<p>Translation starts: <strong>${current.stremio.autoTranslate ? 'automatically when a video is opened' : 'when you pick “AI translate” in the subtitle menu'}</strong></p>
 <p><a class="button" href="${escapeHtml(url.replace(/^https?:\/\//, 'stremio://'))}">Install in Stremio</a>
 <a class="button" href="${escapeHtml(config.stremio.dashboardUrl)}">Open dashboard (progress)</a></p>
 <p>Or paste this address into Stremio's add-on search box:<br><code>${escapeHtml(url)}</code></p>

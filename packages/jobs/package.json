@@ -20,6 +20,7 @@
     "@asc/shared": "workspace:*",
     "@asc/subtitle-parser": "workspace:*",
     "@asc/subtitle-sources": "workspace:*",
-    "@asc/translation-engine": "workspace:*"
+    "@asc/translation-engine": "workspace:*",
+    "zod": "^4.6.7"
   }
 }

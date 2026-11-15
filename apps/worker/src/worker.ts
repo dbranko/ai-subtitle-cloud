@@ -8,7 +8,12 @@ import {
   type Database,
   type HeartbeatIdentity,
 } from '@asc/database';
-import { createDefaultTranslatorFactory, JobWorker, type TranslatorFactory } from '@asc/jobs';
+import {
+  createDefaultTranslatorFactory,
+  JobWorker,
+  SettingsProvider,
+  type TranslatorFactory,
+} from '@asc/jobs';
 import {
   APP_VERSION,
   buildLiveness,
@@ -98,7 +103,8 @@ export async function startWorker(deps: WorkerDeps): Promise<RunningWorker> {
     db,
     config,
     workerId: identity.instanceId,
-    createTranslator: deps.createTranslator ?? createDefaultTranslatorFactory(config),
+    createTranslator: deps.createTranslator ?? createDefaultTranslatorFactory(),
+    settings: new SettingsProvider(db, config),
     logger,
   });
   jobs.start();

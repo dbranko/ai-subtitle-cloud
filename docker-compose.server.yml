@@ -19,8 +19,8 @@ services:
       - api
       - addon
     ports:
-      - "80:80"
-      - "443:443"
+      - '80:80'
+      - '443:443'
     environment:
       # Compose refuses to start without these, so the server can never run unprotected.
       ASC_DOMAIN: ${ASC_DOMAIN:?Set ASC_DOMAIN in .env to the host name of this server}

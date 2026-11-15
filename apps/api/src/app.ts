@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { findUnwritableStorageDirs, type AppConfig } from '@asc/config';
 import { getHeartbeatStatus, pingDatabase, type Database } from '@asc/database';
+import type { SettingsProvider } from '@asc/jobs';
 import type { SubtitleSource } from '@asc/subtitle-sources';
 import { buildLiveness, buildReadiness, loggerOptions, type ReadinessCheck } from '@asc/shared';
 import { EventHub, type EventHubOptions } from './events.js';
@@ -20,6 +21,8 @@ export interface ApiDeps {
   events?: EventHubOptions;
   /** Remote subtitle sources (tests inject fakes; default: those configured). */
   sources?: SubtitleSource[];
+  /** Dashboard settings provider (tests share one with the worker). */
+  settings?: SettingsProvider;
 }
 
 /** Requests per minute allowed per client address on the API routes. */
@@ -50,7 +53,7 @@ export async function buildApp(deps: ApiDeps): Promise<FastifyInstance> {
   app.addHook('preClose', () => {
     events.close();
   });
-  registerApiRoutes(app, { config, db, events, sources: deps.sources });
+  registerApiRoutes(app, { config, db, events, sources: deps.sources, settings: deps.settings });
 
   // Liveness: the process is up. Must stay dependency-free and fast.
   app.get('/health', QUIET, () => buildLiveness('api', startedAt));

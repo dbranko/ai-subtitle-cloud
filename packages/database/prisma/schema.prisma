@@ -148,6 +148,7 @@ model JobEvent {
   createdAt DateTime
 
   @@index([createdAt])
+  @@index([jobId, id])
   @@map("job_events")
 }
 
@@ -244,4 +245,14 @@ model MediaLink {
 
   @@index([translationKey])
   @@map("media_links")
+}
+
+/// Settings changed from the dashboard. They override the environment
+/// configuration. Secret values (API keys, passwords) are stored encrypted.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime
+
+  @@map("settings")
 }

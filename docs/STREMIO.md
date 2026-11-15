@@ -76,15 +76,32 @@ title; the job takes it from the source subtitle's metadata once one is found.
 
 ## Modes
 
-**Automatic** (`STREMIO_AUTO_TRANSLATE=true`, default): opening a title in Stremio starts a
-translation for every configured language that has none.
+**On demand** (`STREMIO_AUTO_TRANSLATE=false`, default): opening a video starts nothing.
+For every configured language that has no translation yet, Stremio's subtitle menu shows an
+entry labelled `<language> · AI translate`. Only when you pick that entry does Stremio load
+its URL (`/translate/...`), and that request starts the translation. What the player then
+shows is a short status message (in Serbian for Serbian/Croatian targets), repeated for ten
+seconds every minute: "AI prevod je pokrenut…". It is plainly a status, never presented as
+a translation. While the job runs the entry reads `<language> · AI 42%` and picking it again
+shows the current progress; it never starts a second job. When the translation is finished,
+reopen the video: the entry is replaced by the real subtitle (with its language code, e.g.
+`srp`). An old entry still loaded in the player then delivers the finished translation.
 
-> Every automatic translation costs AI credits. `STREMIO_DAILY_JOB_LIMIT` (default 20 per
-> 24 hours) caps how many Stremio can start; use `MOCK_AI=true` to try the flow for free.
+The entry's label is deliberately not a language code, so Stremio's automatic choice of a
+subtitle in your preferred language never picks it — nothing is translated without your
+choice. Stremio loads a subtitle URL only when it is selected (observed behaviour of the
+Stremio player; HEAD requests to `/translate/...` are refused so a probe cannot start
+anything).
 
-**Manual** (`STREMIO_AUTO_TRANSLATE=false`): Stremio only receives translations that already
-exist. Start them from the dashboard ("Translate by IMDb ID", or upload an SRT with the
-title's IMDb id) and they appear in Stremio for that title.
+**Automatic** (`STREMIO_AUTO_TRANSLATE=true`, opt-in): opening a title in Stremio starts a
+translation for every configured language that has none; no translate entries are shown.
+
+> Every translation costs AI credits. `STREMIO_DAILY_JOB_LIMIT` (default 20 per 24 hours)
+> caps how many Stremio can start in either mode; use `MOCK_AI=true` to try the flow for
+> free.
+
+Translations can also be started from the dashboard ("Translate by IMDb ID", or an uploaded
+SRT with the title's IMDb id); they appear in Stremio for that title.
 
 ## Installing
 
@@ -105,6 +122,7 @@ you install. See [SECURITY.md](SECURITY.md).
 | `GET /manifest.json`                     | Manifest (SDK router, CORS enabled)                    |
 | `GET /subtitles/:type/:id[/:extra].json` | Subtitles (SDK router)                                 |
 | `GET /files/<name>.srt`                  | A finished translation; only files known to the cache  |
+| `GET /translate/<lang>/<type>/<id>.srt`  | "AI translate" entry: starts the job, returns status   |
 | `GET /`                                  | Landing page: install link, dashboard link             |
 | `GET /configure`                         | Redirect to the dashboard (Stremio's Configure button) |
 | `GET /health`, `/health/ready`           | Health checks (never require the token)                |
@@ -116,8 +134,8 @@ With `AUTH_TOKEN` set, all but the health routes exist only under `/<token>/`.
 | Variable                   | Default                  | Meaning                                         |
 | -------------------------- | ------------------------ | ----------------------------------------------- |
 | `STREMIO_TARGET_LANGUAGES` | `sr-Latn`                | Languages offered, in order                     |
-| `STREMIO_AUTO_TRANSLATE`   | `true`                   | Automatic or manual mode                        |
-| `STREMIO_DAILY_JOB_LIMIT`  | `20`                     | Automatic translations per 24 h (0 = unlimited) |
+| `STREMIO_AUTO_TRANSLATE`   | `false`                  | On demand (false) or automatic (true)           |
+| `STREMIO_DAILY_JOB_LIMIT`  | `20`                     | Translations Stremio may start per 24 h (0 = ∞) |
 | `STREMIO_PROFILE`          | `AI_TRANSLATION_PROFILE` | Translation profile for Stremio requests        |
 | `STREMIO_LANGUAGE_LABELS`  | —                        | `id=value` overrides of the `lang` sent         |
 | `ADDON_PUBLIC_URL`         | `http://127.0.0.1:7000`  | Address Stremio uses to reach the add-on        |
@@ -170,6 +188,10 @@ Second test, same installation, add-on reached through an HTTPS tunnel with `AUT
 So a translation that finishes while a video is playing becomes available **the next time
 the video is opened**. Still to be confirmed with a real (non-simulated) translation: that
 the text is displayed with the correct characters and under the right language name.
+
+Third test, with a real AI provider instead of the simulation: the owner reported that the
+translated subtitle was displayed correctly in Stremio ("works great"). No problem with
+characters or timing was reported.
 
 ## Not yet verified: Stremio Desktop
 

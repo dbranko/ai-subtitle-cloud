@@ -15,7 +15,7 @@ import {
   JobConflictError,
   JobNotFoundError,
   JobRequestError,
-  listJobs,
+  listJobsPage,
   listNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -23,6 +23,8 @@ import {
   requestCancel,
   requestMediaTranslation,
   requireJob,
+  SettingsError,
+  SettingsProvider,
   retryJob,
   toJobView,
   toNotificationView,
@@ -42,6 +44,8 @@ export interface ApiRouteDeps {
   config: AppConfig;
   db: Database;
   events: EventHub;
+  /** Dashboard settings; defaults to a provider over the given configuration. */
+  settings?: SettingsProvider | undefined;
   /** Remote subtitle sources (default: those configured). */
   sources?: SubtitleSource[] | undefined;
 }
@@ -125,16 +129,23 @@ function presentedToken(req: FastifyRequest): string | undefined {
 }
 
 export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): void {
-  const { config, db, events } = deps;
-  const remoteSources = deps.sources ?? createSourcesFromConfig(config);
-  const allSources = [createLibrarySource(db, config), ...remoteSources];
+  const { db, events } = deps;
+  // `base` is the environment configuration (ports, paths, limits, access token).
+  // Everything the owner can change in the dashboard is read through `settings`.
+  const base = deps.config;
+  const settings = deps.settings ?? new SettingsProvider(db, base);
+  const remoteSourcesFor = (config: AppConfig) => deps.sources ?? createSourcesFromConfig(config);
+  const allSourcesFor = (config: AppConfig) => [
+    createLibrarySource(db, config),
+    ...remoteSourcesFor(config),
+  ];
 
   // --- Authentication -------------------------------------------------------
   // Required for every /api route as soon as an AUTH_TOKEN is configured (which
   // the bind guard demands before the API may listen beyond localhost).
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/')) return;
-    const expected = config.security.authToken;
+    const expected = base.security.authToken;
     if (expected === undefined) return;
     const given = presentedToken(req);
     if (given === undefined || !sameToken(given, expected)) {
@@ -159,6 +170,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
         err.kind === 'auth' || err.kind === 'quota' || err.kind === 'rate_limit' ? 502 : 503;
       return reply.code(status).send({ error: `source_${err.kind}`, message: err.message });
     }
+    if (err instanceof SettingsError) {
+      return reply.code(400).send({ error: 'invalid_settings', message: err.message });
+    }
     if (err instanceof z.ZodError) {
       const issue = err.issues[0];
       const where = issue?.path.join('.') || 'request';
@@ -177,7 +191,10 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
   });
 
   // --- Metadata for the UI --------------------------------------------------
-  app.get('/api/v1/meta', () => {
+  app.get('/api/v1/meta', async () => {
+    const config = await settings.config();
+    const remoteSources = remoteSourcesFor(config);
+    const defaults = await settings.defaults();
     const language = (l: { id: string; name: string; nativeName: string }) => ({
       id: l.id,
       name: l.name,
@@ -192,6 +209,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
         provider: config.ai.provider,
         model: config.ai.model ?? null,
         profile: config.ai.translationProfile,
+        targetLanguage: defaults.targetLanguage,
+        customInstructions: defaults.customInstructions,
       },
       sources: [
         { id: 'library', name: 'Your uploads', configured: true },
@@ -203,7 +222,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
       ],
       defaultSourceLanguages: config.sources.languages,
       mockAi: config.mockAi.enabled,
-      maxUploadBytes: config.jobs.maxUploadBytes,
+      maxUploadBytes: base.jobs.maxUploadBytes,
     };
   });
 
@@ -211,8 +230,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
   app.post(
     '/api/v1/jobs',
     // Base64 inflates the upload by a third; leave room for the other fields.
-    { bodyLimit: Math.ceil(config.jobs.maxUploadBytes * 1.4) + 16_384 },
+    { bodyLimit: Math.ceil(base.jobs.maxUploadBytes * 1.4) + 16_384 },
     async (req, reply) => {
+      const config = await settings.config();
       const body = createJobSchema.parse(req.body);
       let srt: string;
       if (body.contentBase64 !== undefined) {
@@ -266,6 +286,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
 
   // Translate a title without uploading a subtitle: the job finds a source itself.
   app.post('/api/v1/jobs/from-media', async (req, reply) => {
+    const config = await settings.config();
     const body = mediaJobSchema.parse(req.body);
     const result = await requestMediaTranslation(db, config, {
       query: body.media,
@@ -295,6 +316,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
 
   // Manual mode: show the owner which source subtitles exist, best match first.
   app.post('/api/v1/sources/search', async (req) => {
+    const config = await settings.config();
     const body = z
       .object({
         media: mediaSchema,
@@ -305,7 +327,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     const languages = body.languages?.length ? body.languages : config.sources.languages;
     const found = [];
     const failures: { source: string; error: string; message: string }[] = [];
-    for (const source of allSources) {
+    for (const source of allSourcesFor(config)) {
       try {
         found.push(...(await source.search(body.media, languages)));
       } catch (err) {
@@ -329,11 +351,45 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     const query = z
       .object({
         scope: z.enum(['active', 'finished', 'all']).default('all'),
+        /** Only jobs in this final state (history filter). */
+        status: z.enum(['completed', 'failed', 'cancelled']).optional(),
         limit: z.coerce.number().int().min(1).max(200).default(50),
+        offset: z.coerce.number().int().min(0).default(0),
       })
       .parse(req.query);
-    const jobs = await listJobs(db, { scope: query.scope, limit: query.limit });
-    return { jobs: jobs.map(toJobView) };
+    const { jobs, total } = await listJobsPage(db, query);
+    return { jobs: jobs.map(toJobView), total };
+  });
+
+  // Recent activity: what was started, finished, failed or cancelled, newest first.
+  app.get('/api/v1/activity', async (req) => {
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(100).default(20) })
+      .parse(req.query);
+    const rows = await db.jobEvent.findMany({
+      where: { type: { in: ['job.created', 'job.completed', 'job.failed', 'job.cancelled'] } },
+      orderBy: { id: 'desc' },
+      take: limit,
+    });
+    return {
+      activity: rows.map((row) => {
+        const job = JSON.parse(row.payload) as {
+          id: string;
+          mediaTitle: string;
+          targetLanguage: string;
+          origin: string;
+        };
+        return {
+          id: row.id,
+          type: row.type,
+          at: row.createdAt.toISOString(),
+          jobId: job.id,
+          title: job.mediaTitle,
+          targetLanguage: job.targetLanguage,
+          origin: job.origin,
+        };
+      }),
+    };
   });
 
   const idParams = (req: FastifyRequest) =>
@@ -356,7 +412,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
     if (job.state !== 'completed' || !job.outputFile) {
       throw new JobConflictError('The translation is not finished yet.');
     }
-    const file = outputPath(config, job.outputFile);
+    const file = outputPath(deps.config, job.outputFile);
     if (!existsSync(file)) throw new JobNotFoundError(job.id);
     // Serving a translation counts as using it, for least-recently-used cache cleanup.
     await db.translation.updateMany({
@@ -378,8 +434,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
   // --- Stremio integration -----------------------------------------------------
   // What the owner needs to install the add-on and understand what it will do.
   app.get('/api/v1/stremio', async () => {
+    const config = await settings.config();
     const { stremio } = config;
-    const token = config.security.authToken;
+    const token = base.security.authToken;
     const manifestUrl = `${stremio.publicUrl}${token ? `/${encodeURIComponent(token)}` : ''}/manifest.json`;
     const local = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(stremio.publicUrl);
     return {
@@ -396,14 +453,23 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
       profile: stremio.profile,
       dailyJobLimit: stremio.dailyJobLimit,
       startedLast24h: await countJobsSince(db, 'stremio', new Date(Date.now() - 24 * 60 * 60_000)),
-      sourceConfigured: remoteSources.length > 0,
+      sourceConfigured: remoteSourcesFor(config).length > 0,
     };
   });
 
+  // --- Settings ---------------------------------------------------------------
+  // Secrets are write-only: they can be set or removed, never read back.
+  app.get('/api/v1/settings', async () => settings.view());
+  app.put('/api/v1/settings', async (req) => settings.update(req.body));
+
   // --- Cache -----------------------------------------------------------------
-  app.get('/api/v1/cache', async () => ({ ...(await cacheStats(db)), limits: config.cache }));
+  app.get('/api/v1/cache', async () => ({
+    ...(await cacheStats(db)),
+    limits: (await settings.config()).cache,
+  }));
 
   app.post('/api/v1/cache/cleanup', async (req) => {
+    const config = await settings.config();
     const body = z
       .object({
         maxAgeDays: z.number().int().min(0).optional(),

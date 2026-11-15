@@ -8,6 +8,7 @@ export type {
   MediaLink,
   Notification,
   ServiceHeartbeat,
+  Setting,
   SourceSubtitle,
   Translation,
   TranslationJob,
