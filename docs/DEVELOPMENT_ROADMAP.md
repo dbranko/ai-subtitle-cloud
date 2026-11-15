@@ -177,6 +177,7 @@ and no-committed-secrets verification.
       restore and update scripts; guide in [DEPLOY_HOME.md](DEPLOY_HOME.md). Tested here in
       Docker behind nginx configured as NPM generates it (HTTPS, token routing, live
       progress, Stremio flow, backup → delete → restore).
-- [ ] Installed on the owner's server and verified on Google TV.
+- [x] Installed on the owner's server behind Nginx Proxy Manager; `home-check.sh` all green.
+- [ ] Verified on Google TV.
 - [ ] Windows/Linux local installation guide, moving to another computer.
 - [ ] GitHub workflow (CI) and a check that no secret is committed.

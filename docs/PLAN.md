@@ -77,9 +77,11 @@ NPM): `scripts/home-setup.sh <ime>` sve pokrene i ispiše šta upisati u NPM i S
 
 ## Sljedeće
 
-- Vlasnik: pokrenuti na serveru, podesiti NPM, instalirati add-on na Google TV, javiti
-  rezultat `scripts/home-check.sh`.
-- Potvrditi tačno ime (`duckdns.org` ili `duckddns.org`).
+- **Instalirano na serveru vlasnika (CINEMA, 192.168.100.40)** iza Nginx Proxy Managera,
+  `https://sorabstremio.duckdns.org`: `scripts/home-check.sh` sve zeleno (certifikat, add-on
+  sa tokenom, bez tokena zatvoren).
+- Čeka se: add-on na Google TV-u, prvi pravi prevod, provjera da je spolja (mobilni podaci)
+  blokirano (Access List).
 - Ostatak faze 8: CI, provjera da nijedna tajna nije commitana, uputstvo za prenos.
 
 ## Otvorena pitanja / kasnije
