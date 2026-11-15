@@ -13,8 +13,8 @@ Stanje na dan 2026-11-15. Grana: `claude/intelligent-heisenberg-i96tw4`.
 | 4    | Izvori titlova (OpenSubtitles), keš             | Završeno, odobreno (živi test)                     |
 | 5    | Stremio add-on                                  | Završeno, provjereno u Stremiu 6.0.7 (HTTPS tunel) |
 | 6    | Dashboard i obavijesti                          | Završeno, odobreno                                 |
-| 7    | Sigurnost, robusnost, testovi                   | **Završeno — čeka odobrenje**                      |
-| 8    | Deploy i dokumentacija                          | Nije počelo                                        |
+| 7    | Sigurnost, robusnost, testovi                   | Završeno, odobreno                                 |
+| 8    | Deploy i dokumentacija                          | **U toku** — kućni server                          |
 
 ## Urađeno izvan plana, na zahtjev vlasnika
 
@@ -68,10 +68,19 @@ web stranica; sigurnosna zaglavlja i CSP. Pregled testova: `docs/TESTING.md`.
 imena (npr. ime računara u mreži) **bez** `AUTH_TOKEN`, dodajte to ime u `ALLOWED_HOSTS`.
 Tunel sa tokenom radi kao i prije.
 
+## Faza 8 — u toku: kućni server
+
+Debian + Docker + Nginx Proxy Manager, Stremio na Google TV-u, samo kućna mreža.
+Uputstvo: `docs/DEPLOY_HOME.md`. Pripremljeno i testirano ovdje u Dockeru (nginx podešen kao
+NPM): `scripts/home-setup.sh <ime>` sve pokrene i ispiše šta upisati u NPM i Stremio;
+`home-check`, `home-backup`, `home-restore`, `home-update`.
+
 ## Sljedeće
 
-- **Odobrenje faze 7**, pa faza 8 (deploy i dokumentacija).
-- I dalje čeka: provjera u pravom Stremiu da se prevodi samo na odabir u meniju.
+- Vlasnik: pokrenuti na serveru, podesiti NPM, instalirati add-on na Google TV, javiti
+  rezultat `scripts/home-check.sh`.
+- Potvrditi tačno ime (`duckdns.org` ili `duckddns.org`).
+- Ostatak faze 8: CI, provjera da nijedna tajna nije commitana, uputstvo za prenos.
 
 ## Otvorena pitanja / kasnije
 

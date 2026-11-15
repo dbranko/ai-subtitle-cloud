@@ -146,7 +146,7 @@ settings, history, downloads. Tests: SSE reconnection, browser refresh, multiple
       history filter and pages, job details with timeline; earlier SSE reconnect and refresh
       tests still green.
 
-## Phase 7 — Full integration and reliability **[done — awaiting approval]**
+## Phase 7 — Full integration and reliability **[done — approved]**
 
 End-to-end tests: movie, episode, Serbian Latin, Serbian Cyrillic, Croatian, provider
 failure, rate limits, cache reuse, restart, cancellation, concurrent jobs, Stremio client
@@ -165,9 +165,18 @@ compatibility. Fix every critical issue found.
       headers, dependency audit.
 - [x] Every issue found fixed (see CHANGELOG); scenario matrix in [TESTING.md](TESTING.md).
 
-## Phase 8 — Deployment and portability
+## Phase 8 — Deployment and portability **[in progress]**
 
 Final Docker configuration; Windows and Linux installation; local startup; moving to another
 computer; backup and restore; private server deployment; GitHub workflow; persistent storage
 and no-committed-secrets verification.
 **Deliverable:** portable private application.
+
+- [x] Home server behind Nginx Proxy Manager: `docker-compose.home.yml`,
+      `scripts/home-setup.sh` (prints the proxy and Stremio settings), check, backup,
+      restore and update scripts; guide in [DEPLOY_HOME.md](DEPLOY_HOME.md). Tested here in
+      Docker behind nginx configured as NPM generates it (HTTPS, token routing, live
+      progress, Stremio flow, backup → delete → restore).
+- [ ] Installed on the owner's server and verified on Google TV.
+- [ ] Windows/Linux local installation guide, moving to another computer.
+- [ ] GitHub workflow (CI) and a check that no secret is committed.

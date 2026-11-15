@@ -2,7 +2,39 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
-## Phase 7 — Full integration and reliability (2026-11-15)
+## Phase 8 (in progress) — Home server deployment (2026-11-15)
+
+### Added
+
+- `docker-compose.home.yml`: publishes the dashboard/API (7001) and the add-on (7000) on the
+  server's address for a reverse proxy; refuses to start without `AUTH_TOKEN` and the public
+  URLs.
+- `scripts/home-setup.sh`: checks Docker, prepares `.env` (generated token, public address,
+  file owner; existing values kept), builds and starts, waits for readiness, and prints the
+  exact Nginx Proxy Manager settings and the Stremio address. Safe to re-run.
+- `scripts/home-check.sh`, `home-backup.sh`, `home-restore.sh`, `home-update.sh`.
+- `docs/DEPLOY_HOME.md`: step-by-step guide (Serbian) for the owner.
+
+### Decisions
+
+1. **Use the owner's existing Nginx Proxy Manager** instead of adding a proxy: it already
+   owns ports 80/443 and issues Let's Encrypt certificates. A dedicated Caddy proxy was
+   started and dropped.
+2. **Forward to the server's address, not a shared Docker network.** Works wherever NPM
+   runs (container, host, other machine) with no network names to look up; the ports stay
+   inside the home network because only 80/443 are forwarded on the router, and every
+   route needs the token.
+3. **Home network only through an NPM Access List** (with the token as second layer); the
+   setup script prints the network range to allow.
+4. **Backups pause the services for a few seconds** so the SQLite file is consistent without
+   adding a database tool to the image; restore never deletes the current data (moved aside).
+
+### Fixed during testing
+
+- Restore rejected valid archives (`tar | grep -q` under `pipefail`); backup returned before
+  the services were ready again.
+
+## Phase 7 — Full integration and reliability (2026-11-15, approved)
 
 ### Added
 

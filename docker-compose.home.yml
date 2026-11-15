@@ -1,0 +1,36 @@
+# Home server behind Nginx Proxy Manager (or any reverse proxy that terminates HTTPS).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.home.yml up -d --build
+#
+# (scripts/home-setup.sh does this for you and prints the proxy settings.)
+#
+# The API (dashboard) and the add-on are published on the server's network
+# address so that the proxy — wherever it runs — can reach them:
+#
+#   http://<server-ip>:7001   dashboard and API
+#   http://<server-ip>:7000   Stremio add-on (only under /<AUTH_TOKEN>/...)
+#
+# Do NOT forward 7000/7001 on the router; only the proxy's 80/443 are meant to be
+# reachable. Compose refuses to start without AUTH_TOKEN and the public URL, so
+# these ports are never open without protection.
+
+services:
+  api:
+    ports: !override
+      - '${ASC_BIND:-0.0.0.0}:${API_PORT:-7001}:7001'
+    environment:
+      AUTH_TOKEN: ${AUTH_TOKEN:?Set AUTH_TOKEN in .env (scripts/home-setup.sh generates one)}
+      DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:?Set DASHBOARD_PUBLIC_URL in .env, e.g. https://name.duckdns.org}
+      ADDON_PUBLIC_URL: ${ADDON_PUBLIC_URL:?Set ADDON_PUBLIC_URL in .env, e.g. https://name.duckdns.org}
+
+  addon:
+    ports: !override
+      - '${ASC_BIND:-0.0.0.0}:${ADDON_PORT:-7000}:7000'
+    environment:
+      AUTH_TOKEN: ${AUTH_TOKEN:?Set AUTH_TOKEN in .env (scripts/home-setup.sh generates one)}
+      DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:?Set DASHBOARD_PUBLIC_URL in .env}
+      ADDON_PUBLIC_URL: ${ADDON_PUBLIC_URL:?Set ADDON_PUBLIC_URL in .env}
+
+  worker:
+    environment:
+      AUTH_TOKEN: ${AUTH_TOKEN:?Set AUTH_TOKEN in .env}

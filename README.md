@@ -66,6 +66,16 @@ docker compose up -d --build
 Then open http://127.0.0.1:7001 (the API serves the built dashboard). Data lives in `./data`.
 Ports are published on `127.0.0.1` only.
 
+### Home server behind Nginx Proxy Manager
+
+```bash
+scripts/home-setup.sh your-name.duckdns.org
+```
+
+Prepares `.env` (access token, public address), starts everything and prints the exact Nginx
+Proxy Manager settings and the Stremio address. Backup, restore, update and check scripts are
+alongside. Step-by-step guide: [docs/DEPLOY_HOME.md](docs/DEPLOY_HOME.md).
+
 ## Commands
 
 | Command               | What it does                                                 |
