@@ -7,6 +7,8 @@ import { setTimeout as sleep } from 'node:timers/promises';
 const ROOT = resolve(import.meta.dirname, '..');
 export const API_PORT = 7411;
 export const WORKER_PORT = 7412;
+export const ADDON_PORT = 7410;
+export const ADDON_URL = `http://127.0.0.1:${ADDON_PORT}`;
 export const BASE_URL = `http://127.0.0.1:${API_PORT}`;
 export const LONG_SUBTITLE = join(ROOT, 'fixtures', 'subtitles', 'long-episode.srt');
 
@@ -28,6 +30,7 @@ export class Stack {
   readonly dataDir = mkdtempSync(join(tmpdir(), 'asc-e2e-'));
   private api: ChildProcess | undefined;
   private worker: ChildProcess | undefined;
+  private addon: ChildProcess | undefined;
   private readonly env: NodeJS.ProcessEnv;
 
   constructor(overrides: Record<string, string> = {}) {
@@ -40,6 +43,8 @@ export class Stack {
       API_HOST: '127.0.0.1',
       API_PORT: String(API_PORT),
       WORKER_HEALTH_PORT: String(WORKER_PORT),
+      ADDON_HOST: '127.0.0.1',
+      ADDON_PORT: String(ADDON_PORT),
       MOCK_AI: 'true',
       // ~7 segments of ~0.7 s: long enough to observe, short enough to test.
       MOCK_AI_DELAY_MS: '700',
@@ -81,6 +86,12 @@ export class Stack {
     await waitForHttp(`http://127.0.0.1:${WORKER_PORT}/health`);
   }
 
+  /** The Stremio add-on process (only the tests that need it start it). */
+  async startAddon(): Promise<void> {
+    this.addon = this.launch('apps/addon/dist/main.js');
+    await waitForHttp(`${ADDON_URL}/health`);
+  }
+
   /** Stop a process the hard way (SIGKILL): no cleanup code runs, exactly like a crash. */
   async killWorker(): Promise<void> {
     await terminate(this.worker, 'SIGKILL');
@@ -93,7 +104,11 @@ export class Stack {
   }
 
   async stop(): Promise<void> {
-    await Promise.all([terminate(this.api, 'SIGKILL'), terminate(this.worker, 'SIGKILL')]);
+    await Promise.all([
+      terminate(this.api, 'SIGKILL'),
+      terminate(this.worker, 'SIGKILL'),
+      terminate(this.addon, 'SIGKILL'),
+    ]);
     rmSync(this.dataDir, { recursive: true, force: true, maxRetries: 5 });
   }
 

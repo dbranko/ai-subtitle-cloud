@@ -23,6 +23,7 @@ export interface Job {
   sourceLanguage: string | null;
   targetLanguage: string;
   profile: string;
+  origin: string;
   provider: string;
   model: string;
   usedModels: { provider: string; model: string }[];
@@ -166,6 +167,17 @@ export interface NewJob {
   force?: boolean;
 }
 
+export interface StremioInfo {
+  manifestUrl: string;
+  installUrl: string;
+  reachable: 'this-computer' | 'https' | 'unsupported';
+  targetLanguages: string[];
+  autoTranslate: boolean;
+  dailyJobLimit: number;
+  startedLast24h: number;
+  sourceConfigured: boolean;
+}
+
 export interface NewMediaJob {
   media: {
     type: 'movie' | 'series';
@@ -179,6 +191,7 @@ export interface NewMediaJob {
 }
 
 export const api = {
+  stremio: () => request<StremioInfo>('GET', '/api/v1/stremio'),
   createMediaJob: (job: NewMediaJob) =>
     request<{ status: 'cached' | 'active' | 'created' | 'failed'; job: Job | null }>(
       'POST',

@@ -10,7 +10,16 @@
   "dependencies": {
     "@asc/config": "workspace:*",
     "@asc/database": "workspace:*",
+    "@asc/jobs": "workspace:*",
     "@asc/shared": "workspace:*",
-    "fastify": "^5.12.8"
+    "@asc/subtitle-parser": "workspace:*",
+    "@asc/subtitle-sources": "workspace:*",
+    "@asc/translation-engine": "workspace:*",
+    "@fastify/middie": "^9.3.6",
+    "fastify": "^5.12.8",
+    "stremio-addon-sdk": "1.6.10"
+  },
+  "devDependencies": {
+    "@types/stremio-addon-sdk": "^1.6.12"
   }
 }

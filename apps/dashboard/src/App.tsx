@@ -11,6 +11,7 @@ import {
   type Job,
   type JobState,
   type Meta,
+  type StremioInfo,
 } from './api';
 import { fetchReadiness, type HealthState } from './health';
 import {
@@ -203,6 +204,7 @@ function JobCard({ job, now, onError }: { job: Job; now: number; onError: (m: st
         )}
         {job.attempt > 1 && <span className="muted small">run {job.attempt}</span>}
         {job.cacheHit && <span className="muted small">reused from cache</span>}
+        {job.origin === 'stremio' && <span className="muted small">requested by Stremio</span>}
       </footer>
     </article>
   );
@@ -583,6 +585,70 @@ function Notifications({
   );
 }
 
+/** How to connect Stremio, and what the add-on will do when Stremio asks for subtitles. */
+function StremioCard() {
+  const [info, setInfo] = useState<StremioInfo | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    api
+      .stremio()
+      .then(setInfo)
+      .catch(() => undefined);
+  }, []);
+  if (!info) return null;
+  return (
+    <section className="card" data-testid="stremio">
+      <h2>Stremio</h2>
+      <p>
+        Languages: <strong>{info.targetLanguages.join(', ') || 'none configured'}</strong> ·
+        automatic translation <strong>{info.autoTranslate ? 'on' : 'off'}</strong>
+        {info.autoTranslate && info.dailyJobLimit > 0 && (
+          <>
+            {' '}
+            · started in the last 24 h: {info.startedLast24h} / {info.dailyJobLimit}
+          </>
+        )}
+      </p>
+      {info.reachable === 'unsupported' && (
+        <p className="error">
+          Stremio only loads add-ons from 127.0.0.1 or over HTTPS. Set ADDON_PUBLIC_URL to an HTTPS
+          address.
+        </p>
+      )}
+      {info.autoTranslate && !info.sourceConfigured && (
+        <p className="detail">
+          No subtitle source is configured (OPENSUBTITLES_API_KEY), so only titles you uploaded a
+          subtitle for can be translated automatically.
+        </p>
+      )}
+      <p className="muted small">Add-on address:</p>
+      <p>
+        <code data-testid="manifest-url">{info.manifestUrl}</code>
+      </p>
+      <div className="actions">
+        <a className="button primary" href={info.installUrl}>
+          Install in Stremio
+        </a>
+        <button
+          onClick={() =>
+            void navigator.clipboard.writeText(info.manifestUrl).then(
+              () => setCopied(true),
+              () => setCopied(false),
+            )
+          }
+        >
+          {copied ? 'Copied' : 'Copy address'}
+        </button>
+      </div>
+      <p className="muted small">
+        Stremio cannot show translation progress. When you open a title, the translation starts in
+        the background and appears here; once it is finished, reopen the video in Stremio to get the
+        subtitle.
+      </p>
+    </section>
+  );
+}
+
 function SystemStatus() {
   const [health, setHealth] = useState<HealthState>({ kind: 'loading' });
   useEffect(() => {
@@ -705,6 +771,8 @@ export function App() {
       </section>
 
       <Notifications items={live.notifications} onError={setMessage} />
+
+      <StremioCard />
 
       <section data-testid="finished-jobs">
         <h2>Recent</h2>

@@ -192,6 +192,8 @@ export async function createJob(
       provider: 'upload',
       language: plan.sourceLanguage?.id,
       fileName: input.sourceName,
+      // Only a title the owner typed; a title derived from the file name is not one.
+      title: input.mediaTitle,
       mediaType: input.mediaType,
       imdbId: input.imdbId,
       season: input.season,
@@ -310,6 +312,8 @@ export interface MediaTranslationInput {
   model?: string | undefined;
   origin?: 'manual' | 'stremio' | undefined;
   force?: boolean | undefined;
+  /** False = only look: report what exists, never start a translation. Default true. */
+  create?: boolean | undefined;
 }
 
 export interface MediaTranslationResult {
@@ -318,8 +322,9 @@ export interface MediaTranslationResult {
    * `active`: a job for this request is already queued or running.
    * `created`: a new job was queued.
    * `failed`: a recent attempt failed; it is not retried yet (see `job.error`).
+   * `missing`: nothing exists and the caller asked not to create a job.
    */
-  status: 'cached' | 'active' | 'created' | 'failed';
+  status: 'cached' | 'active' | 'created' | 'failed' | 'missing';
   job: TranslationJob | null;
   translation: Translation | null;
 }
@@ -417,6 +422,7 @@ export async function requestMediaTranslation(
     });
     if (failed) return { status: 'failed', job: failed, translation: null };
   }
+  if (input.create === false) return { status: 'missing', job: null, translation: null };
 
   const { provider, model } = resolveProvider(config, input);
   const episode =
@@ -975,8 +981,14 @@ export async function recordJobSource(
   workerId: string,
   source: SourceSubtitle,
   language: string | null,
+  /** Title of the media as the source knows it; replaces a bare IMDb id as the job's title. */
+  title?: string,
   now = new Date(),
 ): Promise<TranslationJob> {
+  // Stremio only sends an IMDb id; show the real title once a source has told us what it is.
+  const untitled = job.imdbId !== null && job.mediaTitle.startsWith(job.imdbId);
+  const named =
+    title?.trim() && untitled ? job.mediaTitle.replace(job.imdbId ?? '', title.trim()) : undefined;
   return writeOwned(
     db,
     job,
@@ -988,6 +1000,7 @@ export async function recordJobSource(
       sourceLanguage: language,
       sourceName: source.fileName ?? source.release ?? job.sourceName,
       totalEntries: source.entries,
+      ...(named ? { mediaTitle: named.slice(0, 300) } : {}),
     },
     'job.updated',
     now,
@@ -1372,4 +1385,9 @@ export async function readSnapshot(db: Database, now = new Date()): Promise<Snap
     jobs: [...active, ...finished].map(toJobView),
     notifications: notifications.map(toNotificationView),
   };
+}
+
+/** Jobs that a given origin started since `since` (used to cap automatic translations). */
+export async function countJobsSince(db: Database, origin: string, since: Date): Promise<number> {
+  return db.translationJob.count({ where: { origin, createdAt: { gt: since } } });
 }

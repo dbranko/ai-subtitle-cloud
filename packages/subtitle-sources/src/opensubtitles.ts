@@ -46,6 +46,9 @@ const searchSchema = z.object({
         feature_details: z
           .object({
             year: z.number().nullish(),
+            title: z.string().nullish(),
+            movie_name: z.string().nullish(),
+            parent_title: z.string().nullish(),
             season_number: z.number().nullish(),
             episode_number: z.number().nullish(),
           })
@@ -192,6 +195,7 @@ export function createOpenSubtitlesSource(options: OpenSubtitlesOptions): Subtit
           language: fromProviderLanguage(a.language),
           release: a.release ?? undefined,
           fileName: file.file_name ?? undefined,
+          title: a.feature_details?.parent_title ?? a.feature_details?.title ?? undefined,
           hashMatch: a.moviehash_match === true,
           hearingImpaired: a.hearing_impaired ?? undefined,
           machineTranslated: a.ai_translated === true || a.machine_translated === true,

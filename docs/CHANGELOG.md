@@ -2,6 +2,61 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Phase 5 — Stremio add-on (2026-11-15)
+
+### Added
+
+- `apps/addon`: Stremio add-on on the official SDK — manifest, movie and series subtitle
+  handlers, translated file delivery, landing page, Configure redirect, token-protected
+  address.
+- `@asc/jobs`: look-only media requests (`create: false`), job counter for the daily limit,
+  titles taken from the source for jobs that only have an IMDb id.
+- Source library stores titles (migration `source_title`).
+- API: `GET /api/v1/stremio`. Dashboard: Stremio card (install link, address, mode, limit),
+  "requested by Stremio" marker on jobs.
+- Settings: `STREMIO_*`, `ADDON_PUBLIC_URL`, `DASHBOARD_PUBLIC_URL`.
+- End-to-end test with the add-on as a real process (`e2e/stremio.spec.ts`).
+- `docs/STREMIO.md`, including the Stremio Desktop test checklist.
+
+### Decisions
+
+1. **No in-player progress is claimed.** The SDK's documentation and router source show no
+   progress, notification or refresh mechanism for subtitles. The add-on lists finished
+   translations only; progress lives in the dashboard.
+2. **Never a placeholder subtitle.** An unfinished translation is simply absent from the
+   list. A "translating…" cue would be a status page pretending to be a subtitle.
+3. **Unfinished answers are not cacheable (`max-age=0`); complete answers for 5 minutes.**
+   Short, so that a forced re-translation or cache cleanup is reflected quickly.
+4. **The SDK router is mounted inside the existing Fastify server**, so health checks,
+   logging, the token check and file delivery share one process and port.
+5. **The access token is a path prefix** (`/<token>/manifest.json`), not SDK "user data":
+   Stremio then carries it automatically in every request, including subtitle file URLs.
+6. **Configuration is server-side.** One owner, one installation: the manifest declares no
+   user settings, and the Configure button opens the dashboard.
+7. **A daily cap on automatic translations** (default 20) protects against browsing in
+   Stremio turning into many paid translations.
+8. **ISO 639-2 codes** for `lang`; both Serbian scripts are `srp`, with an override for
+   labels. Bibliographic codes where the two variants differ.
+9. **Failures never break playback:** a configuration problem or an unknown id is answered
+   with an empty subtitle list, not an error.
+10. **The SDK is loaded with `require`.** It is a CommonJS package; a named ESM import
+    worked under the test runner but failed in a plain Node process. The end-to-end test now
+    starts the built add-on, so this class of error is caught.
+
+### Verified
+
+- 529 automated tests and 11 browser/process tests; the add-on in Docker Compose.
+
+### Known limitations / open items
+
+- **Not tested in Stremio Desktop or Stremio Web.** In particular, unverified: when the
+  client asks for subtitles again after a translation finishes (the refresh behaviour),
+  whether it honours `max-age=0`, how the language is displayed, and which ISO 639-2 variant
+  it expects for languages other than Serbian, Croatian and English.
+- Stremio on another device needs HTTPS and `ADDON_PUBLIC_URL`; that deployment is Phase 8.
+- Only IMDb ids are supported (`tt…`); other catalogs get no subtitles.
+- With several target languages, each is a separate translation (and cost).
+
 ## Phase 4 — Subtitle sources and cache (2026-11-14)
 
 ### Added

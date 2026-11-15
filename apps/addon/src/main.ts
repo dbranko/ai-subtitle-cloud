@@ -8,7 +8,7 @@ async function main(): Promise<void> {
   ensureStorageDirs(config);
 
   const db = await openDatabase({ file: config.paths.databaseFile });
-  const app = buildAddonApp({ config, db });
+  const app = await buildAddonApp({ config, db });
   app.log.info({ config: describeConfig(config) }, 'addon starting');
 
   let closing = false;

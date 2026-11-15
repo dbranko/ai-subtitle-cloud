@@ -28,6 +28,8 @@ export interface StoreSourceInput {
   language?: string | undefined;
   fileName?: string | undefined;
   release?: string | undefined;
+  /** Title of the movie or series, when known. */
+  title?: string | undefined;
   mediaType?: string | undefined;
   imdbId?: string | undefined;
   season?: number | undefined;
@@ -55,6 +57,7 @@ export async function storeSource(
     language: input.language,
     fileName: input.fileName?.slice(0, 300),
     release: input.release?.slice(0, 300),
+    title: input.title?.trim().slice(0, 300) || undefined,
     mediaType: input.mediaType,
     imdbId: input.imdbId,
     season: input.season,
@@ -123,6 +126,7 @@ export function createLibrarySource(db: Database, config: AppConfig): SubtitleSo
         language: row.language ?? '',
         release: row.release ?? undefined,
         fileName: row.fileName ?? undefined,
+        title: row.title ?? undefined,
         hashMatch: query.videoHash !== undefined && row.videoHash === query.videoHash.toLowerCase(),
         season: row.season ?? undefined,
         episode: row.episode ?? undefined,

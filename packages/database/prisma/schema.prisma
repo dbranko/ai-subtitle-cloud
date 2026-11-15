@@ -181,6 +181,8 @@ model SourceSubtitle {
   language   String?
   fileName   String?
   release    String?
+  /// Title of the movie or series, when known.
+  title      String?
   mediaType  String?
   imdbId     String?
   season     Int?

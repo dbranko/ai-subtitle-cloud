@@ -6,10 +6,10 @@ It finds a source subtitle for a movie or episode, translates it with an AI prov
 (Claude, OpenAI or Gemini) in a persistent background worker, shows real progress in a
 private dashboard, and serves the finished translation to Stremio.
 
-> **Status: Phases 0–4 complete.** Subtitles can be uploaded or found automatically
-> (OpenSubtitles, your own uploads), are translated by a persistent background worker with
-> live progress, and finished translations are cached and reused. The Stremio add-on is
-> next — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
+> **Status: Phases 0–5 complete.** The Stremio add-on is built on the official SDK and
+> connected to the background translation system; it has been tested with simulated Stremio
+> requests but **not yet in Stremio Desktop** (see [docs/STREMIO.md](docs/STREMIO.md)).
+> Next: the full dashboard — see [docs/DEVELOPMENT_ROADMAP.md](docs/DEVELOPMENT_ROADMAP.md).
 
 ## Requirements
 
@@ -84,7 +84,7 @@ Ports are published on `127.0.0.1` only.
 apps/
   api/         Fastify REST API; serves the dashboard in production
   worker/      Persistent background worker (translation jobs from Phase 3)
-  addon/       Stremio add-on server (Phase 5)
+  addon/       Stremio add-on (official SDK): manifest, subtitles, translated files
   dashboard/   React + Vite control panel
 packages/
   shared/              Version, health report types, logger with secret redaction
@@ -109,6 +109,7 @@ docs/          Product spec, architecture, roadmap, progress system, security, A
 - [Translation engine](docs/TRANSLATION_ENGINE.md)
 - [AI providers](docs/AI_PROVIDERS.md)
 - [Subtitle sources and cache](docs/SOURCES_AND_CACHE.md)
+- [Stremio add-on](docs/STREMIO.md)
 - [Development roadmap](docs/DEVELOPMENT_ROADMAP.md)
 - [Progress system](docs/PROGRESS_SYSTEM.md) — the core async job and progress design
 - [Security](docs/SECURITY.md)

@@ -1,0 +1,166 @@
+# Stremio Add-on
+
+Code: `apps/addon` (`stremio.ts`: manifest, id parsing, subtitles handler; `app.ts`: server).
+Built on the official **Stremio Add-on SDK** (`stremio-addon-sdk`): the manifest is checked
+by the SDK's linter, and `/manifest.json` and `/subtitles/...` are served by the SDK's router.
+
+## What the protocol allows — and what it does not
+
+Taken from the SDK's own documentation and source (`docs/api/requests/defineSubtitlesHandler.md`,
+`docs/api/responses/subtitles.md`, `docs/protocol.md`, `src/getRouter.js`):
+
+- A subtitles request carries `type`, `id` and optional `extra` (`videoHash`, `videoSize`,
+  `filename`). The answer is `{ subtitles: [{ id, url, lang }] }` plus cache hints
+  (`cacheMaxAge`, `staleRevalidate`, `staleError`).
+- `lang` is an ISO 639-2 code; any other text is shown as it is.
+- An add-on must be reachable on `127.0.0.1` or over HTTPS.
+- **There is no way to show progress in the player, to push a notification, or to tell
+  Stremio that a subtitle has become available.** None of the documented resources or
+  response fields provides it, so this add-on does not pretend otherwise.
+
+Consequences for this add-on:
+
+1. A request is answered from the database in milliseconds. Translation never runs in it.
+2. Only **finished** translations are listed. While a translation is running, that language
+   is simply absent — no placeholder subtitle, no status text formatted as a subtitle.
+3. Unfinished answers are sent with `Cache-Control: max-age=0`, so that Stremio's next
+   request is not served a stale empty list.
+4. Progress is shown in the dashboard (the companion progress page), which the add-on links
+   to from its landing page and from Stremio's **Configure** button.
+
+## How it behaves
+
+When Stremio asks for subtitles of a title, for each configured target language:
+
+| Situation                             | Answer for that language | Side effect                     |
+| ------------------------------------- | ------------------------ | ------------------------------- |
+| A finished translation exists (cache) | Subtitle entry           | none                            |
+| A job is queued or running            | nothing                  | none (the job is reused)        |
+| Nothing exists, automatic mode on     | nothing                  | a background job is created     |
+| Nothing exists, automatic mode off    | nothing                  | none                            |
+| A recent search found no source       | nothing                  | none for `SOURCE_RETRY_MINUTES` |
+| Daily limit of automatic jobs reached | nothing                  | none (logged)                   |
+| No AI provider configured             | nothing                  | none (logged)                   |
+
+The job finds a source subtitle (your uploads first, then OpenSubtitles), prefers an exact
+video-hash match, translates in the background, and stores the result. See
+[SOURCES_AND_CACHE.md](SOURCES_AND_CACHE.md) and [PROGRESS_SYSTEM.md](PROGRESS_SYSTEM.md).
+
+**Getting the subtitle into the player.** The add-on can only answer when Stremio asks. From
+the protocol it follows that the finished subtitle is listed on the next subtitles request
+for that video. When exactly the Stremio client sends that request (for example on
+reopening the video) is client behaviour that is **not yet verified in Stremio Desktop** —
+see the checklist below.
+
+### Subtitle entries
+
+- `id`: `asc-<translation id>` — stable for a translation.
+- `url`: `<ADDON_PUBLIC_URL>[/<token>]/files/<job id>.<language>.srt` — a real SRT file,
+  UTF-8, `Content-Type: application/x-subrip; charset=utf-8`, `Access-Control-Allow-Origin: *`.
+- `lang`: ISO 639-2 (`srp`, `hrv`, `eng`, …).
+
+Both Serbian scripts map to `srp`. If you offer both, tell them apart with a label:
+`STREMIO_LANGUAGE_LABELS=sr-Cyrl=Српски (ћирилица)` (a non-ISO value is shown literally,
+but Stremio's preferred-language selection will not match it). For languages whose two
+ISO 639-2 codes differ (German, French, Dutch, Greek, Czech, Slovak, Romanian, Macedonian,
+Chinese) the bibliographic code is sent; which variant Stremio expects is unverified —
+override it the same way if a language shows up as raw text.
+
+### Video ids
+
+- Movie: `tt0111161`
+- Series episode: `tt0903747:2:5` (series IMDb id, season, episode)
+
+Other ids (non-IMDb catalogs) are answered with an empty list. Stremio does not send the
+title; the job takes it from the source subtitle's metadata once one is found.
+
+## Modes
+
+**Automatic** (`STREMIO_AUTO_TRANSLATE=true`, default): opening a title in Stremio starts a
+translation for every configured language that has none.
+
+> Every automatic translation costs AI credits. `STREMIO_DAILY_JOB_LIMIT` (default 20 per
+> 24 hours) caps how many Stremio can start; use `MOCK_AI=true` to try the flow for free.
+
+**Manual** (`STREMIO_AUTO_TRANSLATE=false`): Stremio only receives translations that already
+exist. Start them from the dashboard ("Translate by IMDb ID", or upload an SRT with the
+title's IMDb id) and they appear in Stremio for that title.
+
+## Installing
+
+1. Start the application (`pnpm dev`, or Docker Compose).
+2. Open the add-on's page, `http://127.0.0.1:7000`, or the **Stremio** card in the dashboard.
+3. Click **Install in Stremio**, or paste the add-on address into Stremio's add-on search box:
+   `http://127.0.0.1:7000/manifest.json`
+
+Stremio on another device (TV, phone) cannot reach `127.0.0.1` of this computer. For that,
+put the add-on behind HTTPS, set `ADDON_PUBLIC_URL` to that address and set `AUTH_TOKEN`;
+the add-on is then served only under `/<token>/...` and the token is part of the address
+you install. See [SECURITY.md](SECURITY.md).
+
+## Routes
+
+| Route                                    | Purpose                                                |
+| ---------------------------------------- | ------------------------------------------------------ |
+| `GET /manifest.json`                     | Manifest (SDK router, CORS enabled)                    |
+| `GET /subtitles/:type/:id[/:extra].json` | Subtitles (SDK router)                                 |
+| `GET /files/<name>.srt`                  | A finished translation; only files known to the cache  |
+| `GET /`                                  | Landing page: install link, dashboard link             |
+| `GET /configure`                         | Redirect to the dashboard (Stremio's Configure button) |
+| `GET /health`, `/health/ready`           | Health checks (never require the token)                |
+
+With `AUTH_TOKEN` set, all but the health routes exist only under `/<token>/`.
+
+## Settings
+
+| Variable                   | Default                  | Meaning                                         |
+| -------------------------- | ------------------------ | ----------------------------------------------- |
+| `STREMIO_TARGET_LANGUAGES` | `sr-Latn`                | Languages offered, in order                     |
+| `STREMIO_AUTO_TRANSLATE`   | `true`                   | Automatic or manual mode                        |
+| `STREMIO_DAILY_JOB_LIMIT`  | `20`                     | Automatic translations per 24 h (0 = unlimited) |
+| `STREMIO_PROFILE`          | `AI_TRANSLATION_PROFILE` | Translation profile for Stremio requests        |
+| `STREMIO_LANGUAGE_LABELS`  | —                        | `id=value` overrides of the `lang` sent         |
+| `ADDON_PUBLIC_URL`         | `http://127.0.0.1:7000`  | Address Stremio uses to reach the add-on        |
+| `DASHBOARD_PUBLIC_URL`     | `http://127.0.0.1:7001`  | Dashboard address the add-on links to           |
+| `SOURCE_LANGUAGES`         | `en`                     | Source subtitle languages to look for           |
+
+Settings are read from the environment; one installation serves one owner, so nothing is
+configured per Stremio user and the manifest declares no user settings.
+
+## What has been tested
+
+- Automated (`apps/addon`): manifest content and linting, movie and series ids, extra
+  parameters, language codes, non-blocking answers, duplicate requests, finished
+  translations on the next request, several languages, manual mode, daily limit, missing
+  provider, file delivery and headers, path traversal attempts, missing files, token
+  protection, and a client's view over real HTTP.
+- End to end (`e2e/stremio.spec.ts`): add-on, API and worker as separate processes; the
+  test plays the Stremio client over HTTP while the dashboard shows the jobs live; the
+  add-on keeps serving cached subtitles when the API and worker are down.
+- Docker Compose: the add-on container serves the manifest and answers subtitle requests.
+
+## Not yet verified: Stremio Desktop
+
+Stremio itself could not be run in the development environment. The following must be
+checked on a real installation; please note the result of each step.
+
+1. **Install.** Paste `http://127.0.0.1:7000/manifest.json` into Stremio's add-on search.
+   _Expected:_ "AI Subtitle Cloud" is offered with a Configure button and installs.
+2. **First play.** With `MOCK_AI=true` (free), open a movie that has English subtitles on
+   OpenSubtitles. _Expected:_ playback is not delayed; a job "requested by Stremio" appears
+   in the dashboard and progresses; no AI Subtitle Cloud entry is in the subtitle menu yet.
+3. **After completion.** Wait for the completion notification. _Check:_ does the subtitle
+   appear in the subtitle menu of the **already open** player? If not, does it appear after
+   closing and reopening the video? After restarting Stremio? (This is the refresh behaviour
+   the protocol does not define.)
+4. **Language name.** _Check:_ is the entry listed under the right language name (Serbian)?
+5. **Display.** Select it. _Expected:_ text is readable, characters like č ć š ž đ are
+   correct, timing matches.
+6. **Series.** Repeat with an episode. _Expected:_ the job is titled with the series name
+   and `SxxEyy`.
+7. **Configure button.** In the add-on list, click Configure. _Expected:_ the dashboard opens.
+8. **Stremio Web** (optional): the same from `https://web.stremio.com`.
+
+If step 3 shows that the subtitle only appears after reopening the video, that is the
+documented behaviour of this add-on and nothing needs to change. If it never appears, or
+the language or encoding is wrong, report what you saw.

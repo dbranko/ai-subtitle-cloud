@@ -20,8 +20,12 @@ phase that delivers it.
   and downloads (bearer header, or `?token=` where headers are impossible), with a
   constant-time comparison. Health endpoints stay open. Covered by tests.
 - **[built]** API routes are rate-limited (600 requests per minute per client address).
-- **[planned — Phase 5]** The Stremio add-on URL carries its own unguessable token when the
-  add-on is reachable from other devices.
+- **[built]** With `AUTH_TOKEN` set, the Stremio add-on exists only under `/<token>/...`:
+  manifest, subtitles and translated files are refused without it (constant-time
+  comparison), and the token is part of every subtitle URL the add-on hands out. The address
+  installed in Stremio is therefore the secret; treat it like a password.
+- **[built]** The add-on serves only files that are known finished translations; the file
+  name from the request is matched against the cache and never used as a path.
 - **[planned — Phase 8]** Remote access guide: HTTPS reverse proxy in front, token required.
   Never expose the application publicly without protection.
 
@@ -56,9 +60,10 @@ phase that delivers it.
   translator; HTML, archives and other formats are rejected.
 - **[built]** The OpenSubtitles API key and password are sent only to the API host, never to
   the download host, the browser or logs.
-- Rate limiting on API and add-on endpoints (Phase 3/5).
-- CORS: add-on endpoints allow what the Stremio protocol requires; the API allows only its
-  own origin (Phase 5/6).
+- Rate limiting: **[built]** on the API; not on the add-on (its handlers only read the
+  database, and automatic translations are capped by `STREMIO_DAILY_JOB_LIMIT`).
+- CORS: **[built]** the add-on allows any origin, as the Stremio protocol requires; the API
+  sends no CORS headers, so only its own origin (the dashboard) can call it.
 
 ## Storage
 

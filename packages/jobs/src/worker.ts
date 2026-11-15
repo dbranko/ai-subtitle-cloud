@@ -584,13 +584,16 @@ export class JobWorker {
           language: known ?? undefined,
           fileName: file.fileName ?? candidate.fileName,
           release: candidate.release,
+          title: candidate.title ?? stored?.query.title,
           mediaType: stored?.query.type,
           imdbId: stored?.query.imdbId,
           season: stored?.query.season,
           episode: stored?.query.episode,
           videoHash: candidate.hashMatch ? stored?.query.videoHash : undefined,
         });
-        await this.write(run, (job) => recordJobSource(db, job, workerId, row, known));
+        await this.write(run, (job) =>
+          recordJobSource(db, job, workerId, row, known, candidate.title),
+        );
         return;
       } catch (err) {
         if (run.controller.signal.aborted || err instanceof LostLockError) throw err;

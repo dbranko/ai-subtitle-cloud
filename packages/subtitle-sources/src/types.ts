@@ -25,6 +25,8 @@ export interface SourceCandidate {
   language: string;
   release?: string | undefined;
   fileName?: string | undefined;
+  /** Title of the movie or series as the source knows it. */
+  title?: string | undefined;
   /** The source confirmed that this subtitle belongs to exactly this video file. */
   hashMatch: boolean;
   hearingImpaired?: boolean | undefined;

@@ -35,7 +35,7 @@ makes jobs independent of any HTTP request, browser tab or single process.
 | ----------- | --------------------------------------------------------------------------- | ----------------------------------------- |
 | `api`       | REST API, SSE progress stream, notifications, serves dashboard build        | jobs API, SSE, auth **[built]**           |
 | `worker`    | Claims jobs, runs the translation pipeline, writes progress                 | job worker, heartbeat **[built]**         |
-| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | health **[built]**, Stremio Phase 5       |
+| `addon`     | Stremio manifest + subtitle handlers; returns immediately, never translates | Stremio add-on **[built]**                |
 | `dashboard` | React control panel                                                         | progress screen **[built]**, rest Phase 6 |
 
 ## Why separate processes
@@ -96,13 +96,13 @@ Tables: `translation_jobs`, `job_segments` (checkpoints), `job_events` (event lo
 
 Sources and cache are described in [SOURCES_AND_CACHE.md](SOURCES_AND_CACHE.md).
 
-## Stremio integration [planned — Phase 5]
+## Stremio integration [built — Phase 5]
 
 The add-on answers a subtitle request from the database only: a cached translation is
-returned immediately; otherwise a job is created or reused and a protocol-valid response is
-returned without waiting. How the Stremio client rediscovers the finished subtitle will be
-**verified against the real protocol and Stremio Desktop** in Phase 5 — no capability is
-assumed in advance, and the dashboard provides the full progress experience regardless.
+returned immediately; otherwise a job is created or reused and nothing is returned for that
+language. The Stremio protocol has no progress or refresh mechanism (checked against the
+SDK's documentation and source), so the dashboard is the progress page. Details and the
+pending Stremio Desktop checklist: [STREMIO.md](STREMIO.md).
 
 ## Configuration
 

@@ -49,6 +49,13 @@ const envSchema = z.object({
     .int()
     .min(1024)
     .default(5 * 1024 * 1024),
+  ADDON_PUBLIC_URL: optionalString,
+  DASHBOARD_PUBLIC_URL: optionalString,
+  STREMIO_TARGET_LANGUAGES: z.string().default('sr-Latn'),
+  STREMIO_AUTO_TRANSLATE: bool(true),
+  STREMIO_PROFILE: optionalString,
+  STREMIO_DAILY_JOB_LIMIT: z.coerce.number().int().min(0).default(20),
+  STREMIO_LANGUAGE_LABELS: z.string().default(''),
   OPENSUBTITLES_API_KEY: optionalString,
   OPENSUBTITLES_USERNAME: optionalString,
   OPENSUBTITLES_PASSWORD: optionalString,
@@ -131,6 +138,21 @@ export interface AppConfig {
     segmentMaxAttempts: number;
     /** Largest accepted subtitle upload. */
     maxUploadBytes: number;
+  };
+  stremio: {
+    /** Address under which Stremio reaches the add-on (must be 127.0.0.1 or HTTPS). No trailing slash. */
+    publicUrl: string;
+    /** Address of the dashboard, linked from the add-on as its progress page. */
+    dashboardUrl: string;
+    /** Languages offered to Stremio, in order. */
+    targetLanguages: string[];
+    /** Automatic mode: start a translation when Stremio asks for a title that has none. */
+    autoTranslate: boolean;
+    profile: string;
+    /** Translations Stremio may start automatically per 24 hours (0 = unlimited). */
+    dailyJobLimit: number;
+    /** Overrides for the `lang` value sent to Stremio, by target language id. */
+    languageLabels: Record<string, string>;
   };
   sources: {
     /** OpenSubtitles official API. Disabled without an API key. */
@@ -245,6 +267,22 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       segmentMaxAttempts: e.SEGMENT_MAX_ATTEMPTS,
       maxUploadBytes: e.MAX_UPLOAD_BYTES,
     },
+    stremio: {
+      publicUrl: trimUrl(e.ADDON_PUBLIC_URL ?? `http://127.0.0.1:${e.ADDON_PORT}`),
+      dashboardUrl: trimUrl(e.DASHBOARD_PUBLIC_URL ?? `http://127.0.0.1:${e.API_PORT}`),
+      targetLanguages: splitList(e.STREMIO_TARGET_LANGUAGES),
+      autoTranslate: e.STREMIO_AUTO_TRANSLATE,
+      profile: e.STREMIO_PROFILE ?? e.AI_TRANSLATION_PROFILE,
+      dailyJobLimit: e.STREMIO_DAILY_JOB_LIMIT,
+      languageLabels: Object.fromEntries(
+        splitList(e.STREMIO_LANGUAGE_LABELS)
+          .map((pair) => pair.split('=').map((part) => part.trim()))
+          .filter(
+            (parts): parts is [string, string] =>
+              parts.length === 2 && parts[0] !== '' && parts[1] !== '',
+          ),
+      ),
+    },
     sources: {
       openSubtitles: {
         apiKey: e.OPENSUBTITLES_API_KEY,
@@ -285,6 +323,14 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     },
   };
 }
+
+const splitList = (value: string) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
+
+const trimUrl = (url: string) => url.trim().replace(/\/+$/, '');
 
 function definedOnly(env: Record<string, string | undefined>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -337,6 +383,7 @@ export function describeConfig(config: AppConfig): Record<string, unknown> {
     worker: config.worker,
     jobs: config.jobs,
     mockAi: config.mockAi,
+    stremio: config.stremio,
     sources: {
       openSubtitles: {
         apiKeyConfigured: config.sources.openSubtitles.apiKey !== undefined,

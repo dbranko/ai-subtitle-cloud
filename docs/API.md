@@ -233,14 +233,16 @@ and worker `:7002`. Readiness is `ok`, `degraded` (HTTP 200) or `fail` (HTTP 503
 In production the API serves the built dashboard at `/` with an SPA fallback. Unknown
 `/api/*` paths return `404 {"error":"not_found"}`.
 
+## Stremio — `GET /api/v1/stremio`
+
+What the dashboard shows about the add-on: `manifestUrl`, `installUrl` (`stremio://…`),
+`reachable` (`this-computer`, `https` or `unsupported`), `targetLanguages`, `autoTranslate`,
+`profile`, `dailyJobLimit`, `startedLast24h`, `sourceConfigured`.
+
+The add-on's own routes (port 7000) are described in [STREMIO.md](STREMIO.md).
+
 ## Planned
 
-| Area         | Endpoints (outline)                                   | Phase |
-| ------------ | ----------------------------------------------------- | ----- |
-| Sources      | search and select source subtitles (OpenSubtitles)    | 4     |
-| Translations | cache listing and cleanup                             | 4     |
-| Settings     | `GET /settings`, `PUT /settings` (secrets write-only) | 6     |
-
-Add-on (`:7000`, Stremio protocol, Phase 5): `GET /manifest.json`,
-`GET /subtitles/:type/:id/:extra?.json`, and a URL serving stored translated SRT files. The
-add-on returns `404` for these paths until Phase 5.
+| Area     | Endpoints (outline)                                   | Phase |
+| -------- | ----------------------------------------------------- | ----- |
+| Settings | `GET /settings`, `PUT /settings` (secrets write-only) | 6     |

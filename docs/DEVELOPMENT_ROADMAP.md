@@ -5,17 +5,17 @@ Rules: one phase at a time; each phase is implemented, tested and documented, th
 implementation is finished, automated and relevant integration tests pass, documentation is
 updated, no known critical error remains and a summary has been reported.
 
-| Phase | Name                                                                   | Status                       |
-| ----- | ---------------------------------------------------------------------- | ---------------------------- |
-| 0     | Project foundation                                                     | Done (approved)              |
-| 1     | SRT engine                                                             | Done (approved)              |
-| 2     | AI providers                                                           | Done (approved)              |
-| 3     | Persistent async job engine and progress system (**highest priority**) | Done (approved)              |
-| 4     | Subtitle sources and cache                                             | **Done — awaiting approval** |
-| 5     | Stremio add-on                                                         | Not started                  |
-| 6     | Dashboard and notifications                                            | Not started                  |
-| 7     | Full integration and reliability                                       | Not started                  |
-| 8     | Deployment and portability                                             | Not started                  |
+| Phase | Name                                                                   | Status                                   |
+| ----- | ---------------------------------------------------------------------- | ---------------------------------------- |
+| 0     | Project foundation                                                     | Done (approved)                          |
+| 1     | SRT engine                                                             | Done (approved)                          |
+| 2     | AI providers                                                           | Done (approved)                          |
+| 3     | Persistent async job engine and progress system (**highest priority**) | Done (approved)                          |
+| 4     | Subtitle sources and cache                                             | Done (approved)                          |
+| 5     | Stremio add-on                                                         | **Built — Stremio Desktop test pending** |
+| 6     | Dashboard and notifications                                            | Not started                              |
+| 7     | Full integration and reliability                                       | Not started                              |
+| 8     | Deployment and portability                                             | Not started                              |
 
 ## Phase 0 — Project foundation ✅
 
@@ -103,11 +103,24 @@ translations and start background jobs for new ones. Details:
 
 ## Phase 5 — Stremio add-on
 
-Official SDK integration, manifest, movie and series handlers, language selection,
-translated subtitle delivery, async job handling, cache and status integration, companion
-progress page, test with real Stremio Desktop. Research and verify the actual protocol
-behaviour for subtitle list refresh — invent nothing.
-**Deliverable:** working private add-on on top of the async engine.
+- [x] Official SDK integration (manifest linted by the SDK, SDK router).
+- [x] Manifest.
+- [x] Movie subtitle handler.
+- [x] Series subtitle handler.
+- [x] Language selection (configured target languages, ISO 639-2 codes, label overrides).
+- [x] Translated subtitle delivery (real SRT files, CORS, cache headers).
+- [x] Asynchronous job handling: requests never wait for a translation.
+- [x] Cache integration: finished translations are returned immediately.
+- [x] Status integration: jobs started by Stremio appear live in the dashboard; Stremio card
+      with the install address; the add-on's Configure button opens the dashboard.
+- [x] Automatic and manual mode; daily limit for automatic translations.
+- [x] Access token in the add-on address when exposed beyond this computer.
+- [ ] **Test with actual Stremio Desktop — not done.** Stremio could not be run in the
+      development environment. A step-by-step checklist is in [STREMIO.md](STREMIO.md).
+
+No native progress capability was invented: the protocol has none, so the dashboard is the
+progress page. How the Stremio client picks up a subtitle that finishes later is the main
+point the Desktop test has to confirm.
 
 ## Phase 6 — Dashboard and notifications
 

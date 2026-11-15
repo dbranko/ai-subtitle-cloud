@@ -7,6 +7,7 @@ import { AI_PROVIDER_IDS, type AppConfig } from '@asc/config';
 import type { Database } from '@asc/database';
 import {
   cacheStats,
+  countJobsSince,
   cleanupCache,
   createJob,
   createLibrarySource,
@@ -372,6 +373,31 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
       )
       .header('cache-control', 'private, no-store')
       .send(createReadStream(file));
+  });
+
+  // --- Stremio integration -----------------------------------------------------
+  // What the owner needs to install the add-on and understand what it will do.
+  app.get('/api/v1/stremio', async () => {
+    const { stremio } = config;
+    const token = config.security.authToken;
+    const manifestUrl = `${stremio.publicUrl}${token ? `/${encodeURIComponent(token)}` : ''}/manifest.json`;
+    const local = /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(stremio.publicUrl);
+    return {
+      manifestUrl,
+      installUrl: manifestUrl.replace(/^https?:\/\//, 'stremio://'),
+      // Stremio only loads add-ons from 127.0.0.1 or over HTTPS.
+      reachable: local
+        ? 'this-computer'
+        : stremio.publicUrl.startsWith('https://')
+          ? 'https'
+          : 'unsupported',
+      targetLanguages: stremio.targetLanguages.filter((id) => findLanguage(id)?.target === true),
+      autoTranslate: stremio.autoTranslate,
+      profile: stremio.profile,
+      dailyJobLimit: stremio.dailyJobLimit,
+      startedLast24h: await countJobsSince(db, 'stremio', new Date(Date.now() - 24 * 60 * 60_000)),
+      sourceConfigured: remoteSources.length > 0,
+    };
   });
 
   // --- Cache -----------------------------------------------------------------
