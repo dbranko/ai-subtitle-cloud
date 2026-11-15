@@ -154,6 +154,23 @@ So with this Stremio version the `127.0.0.1` route described in the SDK document
 not work, and the add-on has to be given an HTTPS address (`ADDON_PUBLIC_URL`) together with
 `AUTH_TOKEN`. Why Stremio 6 blocks the local address is not established.
 
+Second test, same installation, add-on reached through an HTTPS tunnel with `AUTH_TOKEN`
+(translations simulated with `MOCK_AI`):
+
+- The add-on installed from `https://<tunnel>/<token>/manifest.json`, and the Configure
+  button reached `/configure`.
+- **First play:** Stremio sent one subtitles request with `filename`, `videoSize` and (for
+  one of two films) `videoHash`. The add-on answered in under 150 ms and created the job;
+  playback was not delayed.
+- **Refresh behaviour — verified:** Stremio did not ask again while the video stayed open.
+  When the video was opened again after the job had finished, Stremio sent a new subtitles
+  request, received the finished subtitle, and downloaded the file from `/files/…`
+  (HTTP 200). This matched for two different films.
+
+So a translation that finishes while a video is playing becomes available **the next time
+the video is opened**. Still to be confirmed with a real (non-simulated) translation: that
+the text is displayed with the correct characters and under the right language name.
+
 ## Not yet verified: Stremio Desktop
 
 Stremio itself could not be run in the development environment. The following must be
