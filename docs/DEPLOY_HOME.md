@@ -78,6 +78,11 @@ proxy_read_timeout 1h;
 access_log off;
 ```
 
+**Upišite samo te tri linije** — bez linija sa ` ``` ` iznad i ispod (to su oznake ovog
+dokumenta, ne konfiguracija). Ako ih nginx dobije, ne pokreće se, a NPM-ova stranica na portu 81
+prestaje da se otvara; popravka: `docker exec <npm-kontejner> sed -i '/```/d'
+/data/nginx/proxy_host/<broj>.conf`, restart kontejnera, pa ispraviti polje u NPM-u.
+
 Prve dvije linije su potrebne da napredak prevoda u dashboardu ide uživo; treća drži token
 izvan NPM logova.
 
