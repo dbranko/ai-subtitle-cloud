@@ -1425,3 +1425,84 @@ export async function readSnapshot(db: Database, now = new Date()): Promise<Snap
 export async function countJobsSince(db: Database, origin: string, since: Date): Promise<number> {
   return db.translationJob.count({ where: { origin, createdAt: { gt: since } } });
 }
+
+// ---------------------------------------------------------------------------
+// Job timeline
+// ---------------------------------------------------------------------------
+
+export interface TimelineEntry {
+  /** Event id (monotonic). */
+  id: number;
+  at: string;
+  /** job.created | job.state | job.detail | job.completed | job.failed | job.cancelled | notification */
+  kind: string;
+  state: JobState | null;
+  attempt: number | null;
+  percentage: number | null;
+  /** Status detail, error message or notification title. */
+  detail: string | null;
+}
+
+export interface JobTimeline {
+  entries: TimelineEntry[];
+  /** True when older events were already pruned from the bounded event log. */
+  truncated: boolean;
+}
+
+const TIMELINE_EVENT_LIMIT = 5000;
+
+/**
+ * What happened to one job, in order: creation, every state change, every new
+ * status detail (retries, deferrals) and the outcome. Plain progress updates
+ * (another segment stored) are folded away, so the timeline stays readable.
+ */
+export async function jobTimeline(db: Database, jobId: string): Promise<JobTimeline> {
+  const rows = await db.jobEvent.findMany({
+    where: { jobId },
+    orderBy: { id: 'asc' },
+    take: TIMELINE_EVENT_LIMIT,
+  });
+  const entries: TimelineEntry[] = [];
+  let lastState: string | null = null;
+  let lastAttempt: number | null = null;
+  let lastDetail: string | null = null;
+  for (const row of rows) {
+    const at = row.createdAt.toISOString();
+    if (row.type === 'notification.created') {
+      const n = JSON.parse(row.payload) as { title?: string };
+      entries.push({
+        id: row.id,
+        at,
+        kind: 'notification',
+        state: null,
+        attempt: null,
+        percentage: null,
+        detail: n.title ?? null,
+      });
+      continue;
+    }
+    const job = JSON.parse(row.payload) as Partial<JobView>;
+    const state = job.state ?? null;
+    const attempt = job.attempt ?? null;
+    const detail = job.statusDetail ?? null;
+    let kind: string | null = null;
+    if (row.type !== 'job.updated') kind = row.type;
+    else if (state !== lastState || attempt !== lastAttempt) kind = 'job.state';
+    else if (detail !== null && detail !== lastDetail) kind = 'job.detail';
+    lastState = state;
+    lastAttempt = attempt;
+    lastDetail = detail;
+    if (kind === null) continue;
+    entries.push({
+      id: row.id,
+      at,
+      kind,
+      state,
+      attempt,
+      percentage: job.percentage ?? null,
+      detail: kind === 'job.failed' ? (job.error?.message ?? detail) : detail,
+    });
+  }
+  const first = rows[0];
+  return { entries, truncated: first === undefined || first.type !== 'job.created' };
+}

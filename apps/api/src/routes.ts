@@ -22,6 +22,7 @@ import {
   outputPath,
   requestCancel,
   requestMediaTranslation,
+  jobTimeline,
   requireJob,
   SettingsError,
   SettingsProvider,
@@ -398,6 +399,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: ApiRouteDeps): voi
   app.get('/api/v1/jobs/:id', async (req) => ({
     job: toJobView(await requireJob(db, idParams(req).id)),
   }));
+
+  // What happened to a job, in order (state changes, retries, outcome) — not every segment.
+  app.get('/api/v1/jobs/:id/events', async (req) => {
+    const job = await requireJob(db, idParams(req).id);
+    return jobTimeline(db, job.id);
+  });
 
   app.post('/api/v1/jobs/:id/cancel', async (req) => ({
     job: toJobView(await requestCancel(db, idParams(req).id)),

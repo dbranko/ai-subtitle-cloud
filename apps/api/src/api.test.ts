@@ -278,6 +278,57 @@ describe('job endpoints', () => {
   });
 });
 
+describe('GET /api/v1/jobs/:id/events (timeline)', () => {
+  interface Timeline {
+    entries: {
+      kind: string;
+      state: string | null;
+      attempt: number | null;
+      detail: string | null;
+    }[];
+    truncated: boolean;
+  }
+
+  it('shows creation, state changes, retries and the outcome — not every segment', async () => {
+    const { job } = (await submit()).json<{ job: JobView }>();
+    startWorker({
+      fault: (r) => (r.segmentIndex === 1 && r.attempt === 1 ? 'missing_entry' : undefined),
+    });
+    await waitForJob(t.db, job.id);
+
+    const res = await get(`/api/v1/jobs/${job.id}/events`);
+    expect(res.statusCode).toBe(200);
+    const { entries, truncated } = res.json<Timeline>();
+    expect(truncated).toBe(false);
+    expect(entries[0]).toMatchObject({ kind: 'job.created', state: 'queued' });
+    const states = entries.filter((e) => e.kind === 'job.state').map((e) => e.state);
+    for (const s of ['parsing', 'translating', 'validating', 'saving']) expect(states).toContain(s);
+    expect(
+      entries.some((e) => e.kind === 'job.detail' && e.detail?.includes('answer rejected')),
+    ).toBe(true);
+    expect(entries.some((e) => e.kind === 'job.completed')).toBe(true);
+    expect(entries.some((e) => e.kind === 'notification')).toBe(true);
+    // 130 entries in many segments, yet only a readable handful of timeline entries.
+    expect(entries.length).toBeLessThan(25);
+  });
+
+  it('shows the error of a failed job and the new attempt after a retry', async () => {
+    const { job } = (await submit()).json<{ job: JobView }>();
+    const failing = startWorker({ fault: () => 'error' });
+    await waitForJob(t.db, job.id);
+    await failing.kill();
+    await post(`/api/v1/jobs/${job.id}/retry`);
+
+    const { entries } = (await get(`/api/v1/jobs/${job.id}/events`)).json<Timeline>();
+    expect(entries.find((e) => e.kind === 'job.failed')?.detail).toBe('Mock provider failure');
+    expect(entries.at(-1)).toMatchObject({ state: 'queued', attempt: 2 });
+  });
+
+  it('returns 404 for an unknown job', async () => {
+    expect((await get('/api/v1/jobs/unknown/events')).statusCode).toBe(404);
+  });
+});
+
 describe('notifications and metadata', () => {
   it('lists notifications and marks them read', async () => {
     const { job } = (await submit()).json<{ job: JobView }>();
