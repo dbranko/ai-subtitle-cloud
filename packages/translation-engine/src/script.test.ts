@@ -4,8 +4,10 @@ import {
   extractTags,
   hasTranslatableText,
   measureScript,
+  repairTags,
   sameTags,
   serbianCyrillicToLatin,
+  simplifyTags,
   stripTags,
 } from './index.js';
 
@@ -75,5 +77,57 @@ describe('markup helpers', () => {
     expect(hasTranslatableText('♪♪')).toBe(false);
     expect(hasTranslatableText('<i>...</i>')).toBe(false);
     expect(hasTranslatableText('42')).toBe(true);
+  });
+});
+
+describe('repairTags / simplifyTags', () => {
+  it('returns the translation unchanged when the tags already match', () => {
+    expect(repairTags('<i>Hello</i>', '<i>Zdravo</i>')).toBe('<i>Zdravo</i>');
+  });
+
+  it('restores tags that wrap the whole entry or every line', () => {
+    expect(repairTags('<i>Hello</i>', 'Zdravo')).toBe('<i>Zdravo</i>');
+    expect(repairTags('{\\an8}<b>LISBON, 1987</b>', 'LISABON, 1987.')).toBe(
+      '{\\an8}<b>LISABON, 1987.</b>',
+    );
+    expect(repairTags('<i>Line one\nline two</i>', 'Prvi red\ndrugi red')).toBe(
+      '<i>Prvi red\ndrugi red</i>',
+    );
+    expect(
+      repairTags(
+        '<font color="#ffff00">I can explain.</font>\n<i>If you let me.</i>',
+        'Mogu objasniti.\nAko me pustiš.',
+      ),
+    ).toBe('<font color="#ffff00">Mogu objasniti.</font>\n<i>Ako me pustiš.</i>');
+    // Per-line wrapping, but the translation merged the lines: tag counts cannot match.
+    expect(
+      repairTags('<i>- Is he gone?</i>\n<i>- For now.</i>', '- Otišao je? - Zasad.'),
+    ).toBeNull();
+  });
+
+  it('removes tags the model added or duplicated', () => {
+    expect(repairTags('Hello there', '<i>Zdravo</i>')).toBe('Zdravo');
+    expect(repairTags('<i>Hello</i>', '<i>Zdravo</i></i>')).toBe('<i>Zdravo</i>');
+  });
+
+  it('does not guess where inline tags belong', () => {
+    expect(repairTags('respond to <i>Pier 14</i>.', 'javite se na Mol 14.')).toBeNull();
+    expect(repairTags('<u>Never</u> call again.', 'Nikad više ne zovi.')).toBeNull();
+  });
+
+  it('simplifies to plain text, keeping only leading positioning', () => {
+    expect(simplifyTags('{\\an8}<u>Never</u> call again.', '<u>Nikad</u> više <i>ne zovi.')).toBe(
+      '{\\an8}Nikad više ne zovi.',
+    );
+    expect(simplifyTags('respond to <i>Pier 14</i>.', 'javite se na Mol 14.')).toBe(
+      'javite se na Mol 14.',
+    );
+  });
+
+  it('compares tags case-, quote- and spacing-insensitively', () => {
+    expect(sameTags('<font color="#ffff00">a</font>', "<FONT color='#FFFF00' >b</Font>")).toBe(
+      true,
+    );
+    expect(sameTags('{\\an8}a', '{\\an 8}b')).toBe(true);
   });
 });

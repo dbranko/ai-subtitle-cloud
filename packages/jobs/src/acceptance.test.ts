@@ -685,7 +685,7 @@ describe('TEST G — provider failure', () => {
     ).toBe(true);
     await worker.stop();
 
-    const broken = mock({ fault: (r) => (r.segmentIndex === 1 ? 'drop_tags' : undefined) });
+    const broken = mock({ fault: (r) => (r.segmentIndex === 1 ? 'missing_entry' : undefined) });
     const second = await submit(ctx, { targetLanguage: 'hr' });
     (await createWorker(ctx, broken)).start();
     const failed = await waitForJob(ctx.db, second.job.id);

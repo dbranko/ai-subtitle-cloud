@@ -319,7 +319,10 @@ describe('translateSubtitle — invalid output and retries', () => {
     },
   );
 
-  it.each(FAULTS)(
+  // Formatting that keeps coming back wrong is handled separately (simplified, not failed).
+  const FATAL_FAULTS = FAULTS.filter(([fault]) => fault !== 'drop_tags');
+
+  it.each(FATAL_FAULTS)(
     'never returns a translation with "%s": it fails after the retry limit',
     async (fault, code) => {
       const translator = createMockTranslator({ fault: () => fault });
@@ -340,6 +343,58 @@ describe('translateSubtitle — invalid output and retries', () => {
       ).toEqual([true, false]);
     },
   );
+
+  it('puts back whole-line formatting the model dropped, without a retry', async () => {
+    // Only entries whose tags wrap whole lines: the repair is unambiguous.
+    const wrapped = [
+      '1\n00:00:01,000 --> 00:00:02,000\n<i>Previously on Harbor Lights...</i>\n',
+      '2\n00:00:03,000 --> 00:00:04,000\n{\\an8}<b>LISBON, 1987</b>\n',
+      '3\n00:00:05,000 --> 00:00:06,000\n<font color="#ffff00">I can explain.</font>\n<i>If you let me.</i>\n',
+      '4\n00:00:07,000 --> 00:00:08,000\n<i>- Is he gone?</i>\n<i>- For now.</i>\n',
+    ].join('\n');
+    const translator = createMockTranslator({ fault: () => 'drop_tags' });
+    const result = await translateSubtitle({ srt: wrapped, targetLanguage: 'hr' }, translator);
+
+    expect(translator.calls).toHaveLength(1);
+    expect(result.stats.repairedMarkupEntries).toBe(4);
+    const source = parseSrt(wrapped).entries;
+    result.entries.forEach((entry, i) => {
+      expect(extractTags(entry.text)).toEqual(extractTags(source[i]!.text));
+    });
+    expect(result.validation.warnings).toEqual([]);
+  });
+
+  it('keeps the translation without inline tags when the model keeps breaking them', async () => {
+    const translator = createMockTranslator({ fault: () => 'drop_tags' });
+    const result = await translateSubtitle({ srt, targetLanguage: 'hr' }, translator, {
+      maxAttemptsPerSegment: 2,
+    });
+
+    // Retried once, then accepted instead of failing the whole job.
+    expect(translator.calls).toHaveLength(2);
+    const source = parseSrt(srt).entries;
+    const byIndex = (n: number) => result.entries.find((e) => e.index === n)!;
+    // Whole-line tags restored exactly.
+    for (const n of [1, 2, 6, 12]) {
+      expect(extractTags(byIndex(n).text)).toEqual(extractTags(source[n - 1]!.text));
+    }
+    // Inline tags (`respond to <i>Pier 14</i>.`, `<u>Never</u> call…`) could not be placed.
+    expect(extractTags(byIndex(10).text)).toEqual([]);
+    expect(extractTags(byIndex(14).text)).toEqual([]);
+    expect(stripTags(byIndex(14).text)).not.toBe('');
+    const simplified = result.validation.warnings.filter((w) => w.code === 'markup_simplified');
+    expect(simplified.map((w) => w.id).sort()).toEqual([10, 14]);
+  });
+
+  it('accepts tags that differ only in case, quotes or spacing', async () => {
+    const one = '1\n00:00:01,000 --> 00:00:02,000\n<font color="#ffff00">I can explain.</font>\n';
+    const translator = createMockTranslator({
+      translate: () => '<FONT color=#FFFF00 >Mogu objasniti.</FONT>',
+    });
+    const result = await translateSubtitle({ srt: one, targetLanguage: 'hr' }, translator);
+    expect(translator.calls).toHaveLength(1);
+    expect(result.entries[0]?.text).toBe('<FONT color=#FFFF00 >Mogu objasniti.</FONT>');
+  });
 
   it('stops at the failing segment and does not translate later ones', async () => {
     const translator = createMockTranslator({

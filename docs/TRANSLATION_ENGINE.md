@@ -140,6 +140,16 @@ Per segment (any issue → the segment is retried):
 Mechanical irregularities (CRLF, trailing spaces, blank lines, double-escaped `\n`) are
 normalized before validation; wording is never altered.
 
+Formatting tags are compared case-, quote- and spacing-insensitively (`<FONT color=#FFFF00>`
+equals `<font color="#ffff00">`), in any order. Before validation, tags the model dropped,
+added or changed are **put back from the source** when their place is unambiguous: tags that
+wrap the whole entry (`<i>…</i>`, `{\an8}<b>…</b>`) or each line when the translation has the
+same number of lines. Words are never touched; the count is in `stats.repairedMarkupEntries`.
+Tags inside a sentence (`respond to <i>Pier 14</i>.`) are not guessed: the segment is retried.
+If on the **last** attempt inline tags are the only remaining problem, the job does not fail
+over an italic word: those entries are kept without inline tags (leading `{\an…}` positioning
+is kept) and each one is reported as a `markup_simplified` warning.
+
 Final, whole file (any issue → `TranslationValidationError`): same number of entries, same
 indexes, same timing, same position settings, no empty text, valid SRT, and the serialized
 output must re-parse to identical entries.

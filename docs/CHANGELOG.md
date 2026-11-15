@@ -2,6 +2,27 @@
 
 Newest first. Each phase records what was added and the decisions made, with reasons.
 
+## Translation engine: formatting tags repaired instead of retried (2026-11-15)
+
+Seen in a real job: `Segment 6: answer rejected (id 209: formatting tags must be copied
+exactly from the source.) — retrying`. One entry with a dropped `<i>` made the whole segment
+go back to the AI, and three such answers in a row would have failed the whole job.
+
+### Changed
+
+- Tag comparison ignores case, attribute quotes and spacing.
+- Tags that wrap a whole entry or whole lines are restored from the source before
+  validation (no AI retry, no extra cost); `stats.repairedMarkupEntries` counts them.
+- Last attempt with only inline-tag problems left: those entries are kept without inline
+  tags (positioning `{\an8}` kept) and reported as `markup_simplified` warnings, instead of
+  failing the job.
+
+### Decisions
+
+- Inline tags (`respond to <i>Pier 14</i>.`) are never placed by guessing — that case is still
+  retried; dropping an italic is preferred over failing a two-hour translation, and it is
+  reported, not hidden.
+
 ## Stremio: translation only from the subtitle menu (owner request, 2026-11-15)
 
 ### Changed

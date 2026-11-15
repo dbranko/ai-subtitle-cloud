@@ -36,6 +36,7 @@ import type {
   TokenUsage,
   TranslationItem,
 } from './translator.js';
+import { repairTags, simplifyTags } from './markup.js';
 import {
   normalizeTranslatedText,
   validateSegmentTranslation,
@@ -146,6 +147,11 @@ export interface SegmentResult {
   durationMs: number;
   /** Entries that came back in Cyrillic and were transliterated to Serbian Latin. */
   transliteratedEntries: number;
+  /**
+   * Entries whose formatting tags were put back from the source (words untouched).
+   * Optional: segments checkpointed by an older version do not have it.
+   */
+  repairedMarkupEntries?: number;
   /** Non-fatal observations (e.g. the model added text around its JSON). */
   warnings: TranslationIssue[];
 }
@@ -244,12 +250,22 @@ export async function translateSegment(
 
       const sourceById = new Map(items.map((i) => [i.id, i.text]));
       let transliteratedEntries = 0;
-      const translated = response.items.map((t): TranslationItem => {
-        let text = normalizeTranslatedText(t.text, sourceById.get(t.id) ?? '');
+      let repairedMarkupEntries = 0;
+      let translated = response.items.map((t): TranslationItem => {
+        const original = sourceById.get(t.id);
+        let text = normalizeTranslatedText(t.text, original ?? '');
         // Guarantee: a Serbian Latin translation never contains Cyrillic.
         if (plan.targetLanguage.id === 'sr-Latn' && containsCyrillic(text)) {
           text = serbianCyrillicToLatin(text);
           transliteratedEntries++;
+        }
+        // Formatting the model dropped or changed is put back when its place is unambiguous.
+        if (original !== undefined) {
+          const repaired = repairTags(original, text);
+          if (repaired !== null && repaired !== text) {
+            text = repaired;
+            repairedMarkupEntries++;
+          }
         }
         return { id: t.id, text };
       });
@@ -262,6 +278,31 @@ export async function translateSegment(
       if (plan.sourceLanguage) validation.sourceLanguage = plan.sourceLanguage;
       issues = validateSegmentTranslation(validation);
 
+      // Last attempt, and inline formatting is the only problem left: rather than fail
+      // the whole job over an italic word, keep the translation without inline tags.
+      const simplified: TranslationIssue[] = [];
+      if (
+        attempt === maxAttempts &&
+        issues.length > 0 &&
+        issues.every((i) => i.code === 'markup_changed' && i.id !== undefined)
+      ) {
+        const ids = new Set(issues.map((i) => i.id));
+        translated = translated.map((t) =>
+          ids.has(t.id) ? { id: t.id, text: simplifyTags(sourceById.get(t.id) ?? '', t.text) } : t,
+        );
+        validation.translated = translated;
+        issues = validateSegmentTranslation(validation).filter(
+          (i) => !(i.code === 'markup_changed' && ids.has(i.id)),
+        );
+        for (const id of ids) {
+          simplified.push({
+            code: 'markup_simplified',
+            id,
+            message: `Segment ${segmentIndex + 1}, id ${id}: the model kept changing the formatting tags; the translation was kept without inline formatting.`,
+          });
+        }
+      }
+
       if (issues.length === 0) {
         const byId = new Map(translated.map((t) => [t.id, t.text]));
         const result: SegmentResult = {
@@ -271,14 +312,18 @@ export async function translateSegment(
           usage,
           durationMs: now() - startedAt,
           transliteratedEntries,
-          warnings: response.extraneousText
-            ? [
-                {
-                  code: 'extraneous_text',
-                  message: `Segment ${segmentIndex + 1}: text around the JSON answer was discarded.`,
-                },
-              ]
-            : [],
+          repairedMarkupEntries,
+          warnings: [
+            ...(response.extraneousText
+              ? [
+                  {
+                    code: 'extraneous_text',
+                    message: `Segment ${segmentIndex + 1}: text around the JSON answer was discarded.`,
+                  },
+                ]
+              : []),
+            ...simplified,
+          ],
         };
         if (response.provider) result.provider = response.provider;
         if (response.model) result.model = response.model;
@@ -330,6 +375,8 @@ export interface TranslationStats {
   /** Calls beyond the first per segment. */
   retries: number;
   transliteratedEntries: number;
+  /** Entries whose formatting tags were restored from the source. */
+  repairedMarkupEntries: number;
   usage: TokenUsage;
   /** Estimated total cost in USD; null when pricing was unknown for any segment. */
   costUsd: number | null;
@@ -422,6 +469,7 @@ export function assembleTranslation(
       attempts,
       retries: attempts - used.length,
       transliteratedEntries: sum((r) => r.transliteratedEntries),
+      repairedMarkupEntries: sum((r) => r.repairedMarkupEntries ?? 0),
       usage: {
         inputTokens: sum((r) => r.usage.inputTokens),
         outputTokens: sum((r) => r.usage.outputTokens),
