@@ -12,7 +12,7 @@ TOKEN="$(env_get AUTH_TOKEN)"
 
 say "Containers"
 require_docker
-compose ps --format 'table {{.Service}}\t{{.State}}\t{{.Health}}'
+compose ps --format 'table {{.Service}}\t{{.Status}}'
 for pair in api:7001 addon:7000 worker:7002; do
   if wait_ready "${pair%%:*}" "${pair##*:}"; then ok "${pair%%:*} ready"; else warn "${pair%%:*} NOT ready"; fi
 done
