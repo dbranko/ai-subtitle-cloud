@@ -8,3 +8,10 @@ onlyBuiltDependencies:
   - esbuild
   - prisma
   - '@prisma/engines'
+
+# Security fixes for dependencies of the Stremio add-on SDK (pnpm audit):
+# - path-to-regexp 0.1.7 (SDK router) has ReDoS flaws; 0.1.13 is the fixed release of the same API.
+# - tmp is only used by the SDK's command-line helper (never run by this application).
+overrides:
+  path-to-regexp@<0.1.13: 0.1.13
+  tmp@<0.2.6: ^0.2.6

@@ -22,11 +22,40 @@ export const REDACTED_LOG_PATHS = [
   'secret',
 ];
 
+/** Query parameters whose values never reach the logs (`?token=` is used by the event stream). */
+const SECRET_QUERY_RE = /([?&](?:token|api_?key|key|password|secret)=)[^&#]*/gi;
+
+/** A request URL with secret query values replaced. */
+export function redactUrl(url: string): string {
+  return url.replace(SECRET_QUERY_RE, '$1[redacted]');
+}
+
+interface LoggedRequest {
+  method?: string;
+  url?: string;
+  host?: string;
+  hostname?: string;
+  ip?: string;
+  socket?: { remoteAddress?: string; remotePort?: number };
+}
+
 export function loggerOptions(service: ServiceName, level: string): LoggerOptions {
   return {
     level,
     base: { service },
     redact: { paths: REDACTED_LOG_PATHS, censor: '[redacted]' },
+    // Fastify logs every request's URL; strip secrets from it (same fields as Fastify's own).
+    serializers: {
+      req(req: LoggedRequest) {
+        return {
+          method: req.method,
+          url: req.url === undefined ? undefined : redactUrl(req.url),
+          host: req.host ?? req.hostname,
+          remoteAddress: req.ip ?? req.socket?.remoteAddress,
+          remotePort: req.socket?.remotePort,
+        };
+      },
+    },
     timestamp: pino.stdTimeFunctions.isoTime,
   };
 }

@@ -8,7 +8,15 @@ import type * as StremioSdk from 'stremio-addon-sdk';
 import type { AppConfig } from '@asc/config';
 import { pingDatabase, type Database } from '@asc/database';
 import { outputPath, SettingsProvider, toJobView } from '@asc/jobs';
-import { buildLiveness, buildReadiness, loggerOptions, type ReadinessCheck } from '@asc/shared';
+import {
+  buildLiveness,
+  buildReadiness,
+  hostAllowed,
+  hostRefusedMessage,
+  loggerOptions,
+  SECURITY_HEADERS,
+  type ReadinessCheck,
+} from '@asc/shared';
 import { findLanguage } from '@asc/translation-engine';
 import {
   buildManifest,
@@ -108,7 +116,21 @@ export async function buildAddonApp(deps: AddonDeps): Promise<FastifyInstance> {
   // preflight; without this header they refuse to load the manifest.
   app.addHook('onRequest', (_req, reply, done) => {
     reply.raw.setHeader('access-control-allow-private-network', 'true');
+    // Set on the raw response so that the SDK router's answers carry them too.
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.raw.setHeader(name, value);
     done();
+  });
+
+  // Without a token, answer only to known host names (protection against DNS rebinding:
+  // a web page could otherwise start translations through the owner's browser).
+  app.addHook('onRequest', async (req, reply) => {
+    if (token || req.url.startsWith('/health')) return;
+    if (!hostAllowed(req.headers.host, config.security.allowedHosts)) {
+      await reply
+        .code(403)
+        .header('access-control-allow-origin', '*')
+        .send({ err: hostRefusedMessage(req.headers.host) });
+    }
   });
 
   // Authentication. Registered before the SDK router so that it runs first.

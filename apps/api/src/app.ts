@@ -7,7 +7,17 @@ import { findUnwritableStorageDirs, type AppConfig } from '@asc/config';
 import { getHeartbeatStatus, pingDatabase, type Database } from '@asc/database';
 import type { SettingsProvider } from '@asc/jobs';
 import type { SubtitleSource } from '@asc/subtitle-sources';
-import { buildLiveness, buildReadiness, loggerOptions, type ReadinessCheck } from '@asc/shared';
+import {
+  buildLiveness,
+  buildReadiness,
+  crossSiteWrite,
+  DASHBOARD_CSP,
+  hostAllowed,
+  hostRefusedMessage,
+  loggerOptions,
+  SECURITY_HEADERS,
+  type ReadinessCheck,
+} from '@asc/shared';
 import { EventHub, type EventHubOptions } from './events.js';
 import { registerApiRoutes } from './routes.js';
 
@@ -41,6 +51,33 @@ export async function buildApp(deps: ApiDeps): Promise<FastifyInstance> {
   const startedAt = deps.startedAt ?? new Date();
   const app = Fastify({
     logger: config.nodeEnv === 'test' ? false : loggerOptions('api', config.logLevel),
+  });
+
+  // Browser protections (see @asc/shared http-guard). Health checks are exempt: they come
+  // from container health checks and monitors, never from a page.
+  app.addHook('onRequest', async (req, reply) => {
+    if (req.url.startsWith('/health')) return;
+    if (
+      config.security.authToken === undefined &&
+      !hostAllowed(req.headers.host, config.security.allowedHosts)
+    ) {
+      await reply
+        .code(403)
+        .send({ error: 'host_not_allowed', message: hostRefusedMessage(req.headers.host) });
+      return;
+    }
+    if (crossSiteWrite(req.method, req.headers)) {
+      await reply.code(403).send({
+        error: 'cross_site_request',
+        message: 'Requests from other websites are not accepted.',
+      });
+    }
+  });
+  app.addHook('onSend', async (req, reply) => {
+    for (const [name, value] of Object.entries(SECURITY_HEADERS)) reply.header(name, value);
+    if (!req.url.startsWith('/api/') && !req.url.startsWith('/health')) {
+      reply.header('content-security-policy', DASHBOARD_CSP);
+    }
   });
 
   await app.register(rateLimit, {

@@ -100,6 +100,7 @@ const envSchema = z.object({
   AI_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(3),
   PRICING_FILE: optionalString,
   ALLOW_UNAUTHENTICATED_NON_LOOPBACK: bool(false),
+  ALLOWED_HOSTS: z.string().default(''),
 });
 
 export interface AppConfig {
@@ -199,6 +200,11 @@ export interface AppConfig {
     /** Shared secret required when any service is bound beyond localhost. Never log this. */
     authToken: string | undefined;
     allowUnauthenticatedNonLoopback: boolean;
+    /**
+     * Host names the services answer to while no AUTH_TOKEN is set (protection against DNS
+     * rebinding): loopback names, the hosts of the public URLs, and ALLOWED_HOSTS.
+     */
+    allowedHosts: string[];
   };
 }
 
@@ -316,8 +322,29 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     security: {
       authToken: e.AUTH_TOKEN,
       allowUnauthenticatedNonLoopback: e.ALLOW_UNAUTHENTICATED_NON_LOOPBACK,
+      allowedHosts: [
+        ...new Set(
+          [
+            'localhost',
+            '127.0.0.1',
+            '::1',
+            ...[e.ADDON_PUBLIC_URL, e.DASHBOARD_PUBLIC_URL].map(urlHost),
+            ...splitList(e.ALLOWED_HOSTS).map((h) => h.toLowerCase()),
+          ].filter((h): h is string => Boolean(h)),
+        ),
+      ],
     },
   };
+}
+
+/** Host name (lower case, no port, no IPv6 brackets) of a URL; undefined when absent or invalid. */
+function urlHost(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  } catch {
+    return undefined;
+  }
 }
 
 const splitList = (value: string) =>

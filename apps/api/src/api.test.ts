@@ -488,6 +488,76 @@ describe('authentication', () => {
   });
 });
 
+describe('browser protections (no token)', () => {
+  it('answers only to known host names (DNS rebinding)', async () => {
+    const evil = await get('/api/v1/jobs', { host: 'evil.example:7001' });
+    expect(evil.statusCode).toBe(403);
+    expect(evil.json()).toMatchObject({ error: 'host_not_allowed' });
+    expect(evil.json<{ message: string }>().message).toContain('ALLOWED_HOSTS');
+    expect((await get('/', { host: 'evil.example' })).statusCode).toBe(403);
+    for (const host of ['127.0.0.1:7001', 'localhost:7001', '[::1]:7001']) {
+      expect((await get('/api/v1/jobs', { host })).statusCode, host).toBe(200);
+    }
+    // Docker and monitors check health under any name.
+    expect((await get('/health', { host: 'api' })).statusCode).toBe(200);
+  });
+
+  it('also answers to the public addresses and ALLOWED_HOSTS', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({
+      DASHBOARD_PUBLIC_URL: 'https://subs.example.org',
+      ALLOWED_HOSTS: 'nas.local, My-PC',
+    });
+    for (const host of ['subs.example.org', 'nas.local:7001', 'my-pc:7001']) {
+      expect((await get('/api/v1/jobs', { host })).statusCode, host).toBe(200);
+    }
+    expect((await get('/api/v1/jobs', { host: 'other.example.org' })).statusCode).toBe(403);
+  });
+
+  it('with a token, the token is the protection and any host name works', async () => {
+    await app.close();
+    await t.cleanup();
+    const TOKEN = 'a-long-enough-test-token-0123456789';
+    await start({ AUTH_TOKEN: TOKEN });
+    const res = await get('/api/v1/jobs', {
+      host: 'abc.trycloudflare.com',
+      authorization: `Bearer ${TOKEN}`,
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('refuses changes sent by another website, and nothing changes', async () => {
+    const created = await submit();
+    const id = created.json<{ job: JobView }>().job.id;
+    const forged = await post(`/api/v1/jobs/${id}/cancel`, undefined, {
+      origin: 'https://evil.example',
+    });
+    expect(forged.statusCode).toBe(403);
+    expect(forged.json()).toMatchObject({ error: 'cross_site_request' });
+    const viaFetchMetadata = await post(`/api/v1/notifications/read-all`, undefined, {
+      'sec-fetch-site': 'cross-site',
+    });
+    expect(viaFetchMetadata.statusCode).toBe(403);
+    expect((await get(`/api/v1/jobs/${id}`)).json<{ job: JobView }>().job.state).toBe('queued');
+
+    // The dashboard's own request (same origin) is accepted.
+    const own = await post(`/api/v1/jobs/${id}/cancel`, undefined, {
+      host: '127.0.0.1:7001',
+      origin: 'http://127.0.0.1:7001',
+      'sec-fetch-site': 'same-origin',
+    });
+    expect(own.statusCode).toBe(200);
+  });
+
+  it('sends security headers on every answer', async () => {
+    const res = await get('/api/v1/jobs');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Server-Sent Events over a real HTTP connection
 // ---------------------------------------------------------------------------

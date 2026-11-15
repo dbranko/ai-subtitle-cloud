@@ -627,6 +627,36 @@ describe('access token', () => {
   });
 });
 
+describe('browser protections', () => {
+  it('without a token, answers only to known host names and starts nothing otherwise', async () => {
+    const evil = await get(MOVIE, { host: 'evil.example:7000' });
+    expect(evil.statusCode).toBe(403);
+    expect(evil.json<{ err: string }>().err).toContain('ALLOWED_HOSTS');
+    const translate = await get('/translate/sr-Latn/movie/tt0111161.srt', {
+      host: 'evil.example:7000',
+    });
+    expect(translate.statusCode).toBe(403);
+    expect(await t.db.translationJob.count()).toBe(0);
+    expect((await get('/manifest.json', { host: '127.0.0.1:7000' })).statusCode).toBe(200);
+    expect((await get('/health', { host: 'addon' })).statusCode).toBe(200);
+  });
+
+  it('answers to its public address (e.g. an HTTPS tunnel)', async () => {
+    await app.close();
+    await t.cleanup();
+    await start({ ADDON_PUBLIC_URL: 'https://abc.trycloudflare.com' });
+    expect((await get('/manifest.json', { host: 'abc.trycloudflare.com' })).statusCode).toBe(200);
+  });
+
+  it('marks every answer, including the SDK’s, so the token in its URLs is never a referrer', async () => {
+    for (const path of ['/manifest.json', MOVIE, '/', '/files/none.srt']) {
+      const res = await get(path);
+      expect(res.headers['x-content-type-options'], path).toBe('nosniff');
+      expect(res.headers['referrer-policy'], path).toBe('no-referrer');
+    }
+  });
+});
+
 describe('as a Stremio client sees it (real HTTP)', () => {
   it('manifest → subtitles (translate entry) → pick → subtitles (ready) → download', async () => {
     await app.close();
