@@ -49,7 +49,11 @@ Newest first. Each phase records what was added and the decisions made, with rea
 
 ### Known limitations / open items
 
-- **Not tested in Stremio Desktop or Stremio Web.** In particular, unverified: when the
+- **First Stremio Desktop test (6.0.7, Windows): the local address did not work.** Stremio
+  reported "failed to get addon manifest" for `http://127.0.0.1:7000`, and the add-on
+  received no request at all. An HTTPS address is needed with this version; see the field
+  report in STREMIO.md. The add-on now also sends `Access-Control-Allow-Private-Network`.
+- **Everything after installation is still untested in Stremio Desktop or Stremio Web.** In particular, unverified: when the
   client asks for subtitles again after a translation finishes (the refresh behaviour),
   whether it honours `max-age=0`, how the language is displayed, and which ISO 639-2 variant
   it expects for languages other than Serbian, Croatian and English.

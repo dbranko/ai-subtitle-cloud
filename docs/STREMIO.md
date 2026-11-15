@@ -139,6 +139,21 @@ configured per Stremio user and the manifest declares no user settings.
   add-on keeps serving cached subtitles when the API and worker are down.
 - Docker Compose: the add-on container serves the manifest and answers subtitle requests.
 
+## Field report: Stremio 6.0.7 on Windows (2026-11-15)
+
+First test on a real installation, add-on running in Docker Desktop:
+
+- `http://127.0.0.1:7000/manifest.json` opened correctly in a browser.
+- Stremio 6.0.7 answered "failed to get addon manifest" for both `http://127.0.0.1:7000/…`
+  and `http://localhost:7000/…`.
+- The add-on's request log showed **no request at all** from Stremio (the add-on logs every
+  request, including browser preflights). The request is therefore stopped inside Stremio
+  before it is sent; nothing in the manifest is being rejected.
+
+So with this Stremio version the `127.0.0.1` route described in the SDK documentation did
+not work, and the add-on has to be given an HTTPS address (`ADDON_PUBLIC_URL`) together with
+`AUTH_TOKEN`. Why Stremio 6 blocks the local address is not established.
+
 ## Not yet verified: Stremio Desktop
 
 Stremio itself could not be run in the development environment. The following must be
